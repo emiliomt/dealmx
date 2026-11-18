@@ -7,11 +7,15 @@ export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const sb = createClient();
-  const [{ data: deals }, { data: estados }] = await Promise.all([
+  const [{ data: deals, error: errDeals }, { data: estados, error: errEstados }] = await Promise.all([
     sb.from("deals").select("id,titulo,segmento,tipo_operacion,estado_clave,municipio_clave,precio,cap_rate,m2_construccion,m2_terreno,monto_capital_buscado,es_ejemplo,deal_photos(path,orden)")
       .in("status", ["publicado"]).order("published_at", { ascending: false, nullsFirst: false }).limit(6),
     sb.from("inegi_estados").select("clave,nombre").order("nombre"),
   ]);
+  // Un esquema ausente (migraciones sin aplicar), una llave inválida o una red caída NO deben parecer "no hay deals":
+  // el detalle va al log del servidor y al visitante se le muestra un aviso genérico (sin mensajes internos).
+  const fallo = errDeals ?? errEstados;
+  if (fallo) console.error("[home] no se pudieron cargar los datos de la portada:", fallo.message);
   const filas = deals ?? [];
   const nombres = await cargarNombres(sb, filas);
   const num = (x: unknown) => (x == null ? null : Number(x));
@@ -49,9 +53,10 @@ export default async function Home() {
       </section>
       <section>
         <h2 className="mb-3 text-xl font-bold">Deals destacados</h2>
-        {resumen.length === 0 ? <p className="text-muted-foreground">Aún no hay deals publicados.</p> : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{resumen.map((d) => <DealCard key={d.id} d={d} />)}</div>
-        )}
+        {fallo && <p role="alert" className="text-sm text-destructive">No pudimos cargar los deals. Intenta de nuevo en unos minutos.</p>}
+        {resumen.length > 0
+          ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{resumen.map((d) => <DealCard key={d.id} d={d} />)}</div>
+          : !fallo && <p className="text-muted-foreground">Aún no hay deals publicados.</p>}
       </section>
     </div>
   );

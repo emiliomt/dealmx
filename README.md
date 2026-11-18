@@ -93,7 +93,11 @@ Qué demuestra cada una (y qué **no**):
   placeholder **editable, no la TIIE**. Modelo: NOI declarado × (1+crecimiento)^(t−1) × (1−vacancia); capex como % del NOI; deuda con
   amortización mensual; salida capitalizando el NOI siguiente al cap rate de entrada, sin costos de venta ni impuestos.
 
-## Despliegue en Vercel + Supabase
+## Despliegue (Vercel o Railway) + Supabase
+
+> **Aplica las migraciones ANTES del primer deploy.** Si la app carga pero la portada muestra "No pudimos cargar los deals" (o, en versiones anteriores,
+> "Aún no hay deals" con el desplegable *Estado* vacío), el proyecto de Supabase no tiene el esquema: `select count(*) from inegi_estados;` debe dar 32.
+> Una base recién migrada **sin seed** muestra "Aún no hay deals publicados" hasta que un vendedor publique y un admin apruebe: es lo correcto.
 
 1. **Proyecto Supabase** (hosted). Anota URL, anon key y service_role key (Settings → API).
 2. **Migraciones:**
@@ -102,6 +106,7 @@ Qué demuestra cada una (y qué **no**):
    npx supabase link --project-ref <tu-ref>
    npx supabase db push        # aplica supabase/migrations/* (el seed NO se aplica: en producción no cargues deals ficticios)
    ```
+   Si prefieres no usar la CLI, pega `supabase/migrations/0001…0008` **en orden** en el SQL Editor.
    Verifica en el dashboard que existan los buckets `deal-photos` (público) y `data-room` (privado) y que `messages` esté en la publicación `supabase_realtime`.
 3. **Auth** (Authentication → URL Configuration): *Site URL* = tu dominio; añade `https://<dominio>/auth/callback` a *Redirect URLs*.
    **Activa "Confirm email"** (en local está desactivado por comodidad; las alertas solo se envían a correos confirmados) y configura un
@@ -115,6 +120,14 @@ Qué demuestra cada una (y qué **no**):
    curl -H "Authorization: Bearer $CRON_SECRET" "https://<dominio>/api/cron/alerts?dry=1"   # debe responder 200 con conteos
    ```
    Confirma que `/e2e/mapa` da 404 y que `/admin` redirige al login sin sesión.
+
+### Notas para Railway
+- Build `npm run build`, start `npm start` (Railway define `PORT`; `next start` lo respeta).
+- Define las mismas variables de la tabla de arriba. `NEXT_PUBLIC_SITE_URL` es el dominio público de Railway (no `localhost`) y `NEXT_PUBLIC_SUPABASE_URL` la URL
+  del proyecto en la nube (`https://<ref>.supabase.co`), **no** `http://127.0.0.1:54321`. Una llave vacía o ausente hace que toda la app responda 500
+  (`Your project's URL and Key are required…`). Tras cambiar cualquier `NEXT_PUBLIC_*` hay que redesplegar (se incrustan al compilar).
+- `vercel.json` (el cron de alertas) **no** aplica en Railway: crea un cron aparte —o usa un programador externo— que haga
+  `GET https://<dominio>/api/cron/alerts` con la cabecera `Authorization: Bearer $CRON_SECRET`, una vez al día.
 
 ### Primer administrador
 El rol `admin` no se puede elegir al registrarse ni auto-asignarse. Regístrate normalmente y, en el *SQL Editor* de Supabase (corre sin `auth.uid()`, por lo que el trigger lo permite):

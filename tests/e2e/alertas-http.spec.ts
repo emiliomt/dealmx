@@ -62,3 +62,17 @@ test.describe("rutas protegidas (HTTP real, sin sesión)", () => {
     });
   }
 });
+
+test.describe("portada con la base de datos inaccesible o sin esquema (HTTP real)", () => {
+  // El servidor de pruebas apunta a un Supabase inexistente: equivale a un proyecto sin migraciones o con una llave mala.
+  test("/ avisa que no pudo cargar los deals, en vez de aparentar que simplemente no hay ninguno", async ({ request }) => {
+    const r = await request.get("/");
+    expect(r.status()).toBe(200);
+    const html = await r.text();
+    expect(html).toContain("No pudimos cargar los deals");
+    expect(html).not.toContain("Aún no hay deals publicados");
+    // no se filtran detalles internos (mensajes de PostgREST / red) a los visitantes
+    expect(html).not.toMatch(/fetch failed|ECONNREFUSED|PGRST|does not exist|127\.0\.0\.1/i);
+  });
+});
+
