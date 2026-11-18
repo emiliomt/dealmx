@@ -1,0 +1,10 @@
+export default function Privacidad() {
+  return (
+    <article className="space-y-3">
+      <h1 className="text-2xl font-bold">Aviso de privacidad</h1>
+      <p>Conforme a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP), el responsable del tratamiento de tus datos es [RAZÓN SOCIAL], con domicilio en [DOMICILIO].</p>
+      <p>Finalidades: operar tu cuenta, gestionar NDAs y comunicación entre inversionistas y vendedores, enviar alertas que configures y prevenir fraude. Derechos ARCO: [CORREO DE CONTACTO].</p>
+      <p className="text-sm text-muted-foreground">PLACEHOLDER: requiere redacción y revisión legal antes de producción.</p>
+    </article>
+  );
+}
