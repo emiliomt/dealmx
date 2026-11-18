@@ -8,5 +8,5 @@ export default async function Dashboard() {
   const { data: { user } } = await sb.auth.getUser();
   if (!user) redirect("/auth/login?next=/dashboard");
   const { data: p } = await sb.from("profiles").select("rol").eq("id", user.id).maybeSingle();
-  redirect(p?.rol === "vendedor" ? "/dashboard/vendedor" : "/dashboard/inversionista" /* admin: /admin llega en la Fase 7 */);
+  redirect(p?.rol === "vendedor" ? "/dashboard/vendedor" : p?.rol === "admin" ? "/admin" : "/dashboard/inversionista");
 }

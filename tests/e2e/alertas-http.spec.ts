@@ -52,3 +52,13 @@ test.describe("cron y bajas (HTTP real, sin BD)", () => {
     expect(await r.json()).toEqual({ error: "No se pudo procesar la baja" });
   });
 });
+
+test.describe("rutas protegidas (HTTP real, sin sesión)", () => {
+  for (const ruta of ["/admin", "/dashboard", "/dashboard/vendedor", "/publicar"]) {
+    test(`${ruta} sin sesión redirige al login conservando el destino`, async ({ request }) => {
+      const r = await request.get(ruta, { maxRedirects: 0 });
+      expect([302, 307]).toContain(r.status());
+      expect(r.headers()["location"]).toContain(`/auth/login?next=${encodeURIComponent(ruta)}`);
+    });
+  }
+});

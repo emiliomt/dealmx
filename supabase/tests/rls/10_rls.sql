@@ -474,4 +474,184 @@ do $$ begin
 end $$;
 select pg_temp.reset();
 
+-- ===== Fase 7: moderación, verificación, reapertura de NDA y auditoría =====
+insert into deals (id, seller_id, titulo, tipo_operacion, segmento, estado_clave, municipio_clave, precio, status) values
+ ('33333333-3333-3333-3333-333333333333','00000000-0000-0000-0000-0000000000a1','Deal en revisión de prueba','venta','mixto','19','039', 3000000, 'en_revision'),
+ ('44444444-4444-4444-4444-444444444444','00000000-0000-0000-0000-0000000000a1','Otro deal en revisión','venta','mixto','19','039', 4000000, 'en_revision');
+
+-- Solo admin: dueño, inversionista y anónimo NO pueden moderar, verificar, reabrir ni ver el resumen
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+do $$ begin
+  begin perform public.moderar_deal('33333333-3333-3333-3333-333333333333', 'aprobar'); raise exception 'DEBIO FALLAR: dueño autoaprobándose';
+  exception when others then assert sqlerrm like '%No autorizado%', sqlerrm; end;
+  begin perform public.verificar_usuario('00000000-0000-0000-0000-0000000000a1', 'verificado'); raise exception 'DEBIO FALLAR: autoverificación por RPC';
+  exception when others then assert sqlerrm like '%No autorizado%', sqlerrm; end;
+  begin perform public.reabrir_nda(gen_random_uuid(), 'motivo suficientemente largo'); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%No autorizado%', sqlerrm; end;
+  begin perform public.admin_resumen(); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%No autorizado%', sqlerrm; end;
+  -- el trigger sigue impidiendo el atajo por UPDATE directo y escribir la nota de verificación
+  begin update profiles set nota_verificacion = 'verificado por mí' where id = auth.uid(); raise exception 'DEBIO FALLAR: nota propia';
+  exception when others then assert sqlerrm like '%No autorizado%', sqlerrm; end;
+  begin update deals set status = 'publicado' where id = '33333333-3333-3333-3333-333333333333'; raise exception 'DEBIO FALLAR: autopublicación';
+  exception when others then assert sqlerrm like '%Transición%', sqlerrm; end;
+  begin insert into admin_audit (entidad, entidad_id, accion) values ('deal', gen_random_uuid(), 'falsa'); raise exception 'DEBIO FALLAR: forjar auditoría';
+  exception when others then assert sqlerrm like '%permission denied%', sqlerrm; end;
+  assert (select count(*) from admin_audit) = 0, 'el dueño no lee la bitácora';
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1', 'authenticated');
+do $$ begin
+  begin perform public.moderar_deal('33333333-3333-3333-3333-333333333333', 'aprobar'); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%No autorizado%', sqlerrm; end;
+  begin perform public.verificar_usuario('00000000-0000-0000-0000-0000000000b1', 'verificado'); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%No autorizado%', sqlerrm; end;
+  assert (select count(*) from admin_audit) = 0, 'el inversionista no lee la bitácora';
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('', 'anon');
+do $$ begin
+  begin perform public.moderar_deal('33333333-3333-3333-3333-333333333333', 'aprobar'); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%permission denied%', sqlerrm; end;
+  begin perform public.admin_resumen(); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%permission denied%', sqlerrm; end;
+end $$;
+select pg_temp.reset();
+
+-- Moderación (admin c1): validaciones y máquina de estados
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1', 'authenticated');
+do $$ begin
+  begin perform public.moderar_deal('33333333-3333-3333-3333-333333333333', 'rechazar'); raise exception 'DEBIO FALLAR: sin motivo';
+  exception when others then assert sqlerrm like '%motivo%', sqlerrm; end;
+  begin perform public.moderar_deal('33333333-3333-3333-3333-333333333333', 'rechazar', 'corto'); raise exception 'DEBIO FALLAR: motivo corto';
+  exception when others then assert sqlerrm like '%motivo%', sqlerrm; end;
+  begin perform public.moderar_deal('33333333-3333-3333-3333-333333333333', 'inventada'); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%Acción desconocida%', sqlerrm; end;
+  begin perform public.moderar_deal(gen_random_uuid(), 'aprobar'); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%no encontrado%', sqlerrm; end;
+  begin perform public.moderar_deal('44444444-4444-4444-4444-444444444444', 'despublicar', 'motivo suficientemente largo'); raise exception 'DEBIO FALLAR: despublicar algo no publicado';
+  exception when others then assert sqlerrm like '%Solo se despublican%', sqlerrm; end;
+  assert (select count(*) from admin_audit) = 0, 'los intentos fallidos no dejan rastro (rollback)';
+  assert public.moderar_deal('33333333-3333-3333-3333-333333333333', 'rechazar', 'Faltan fotos y el NOI no cuadra') = 'borrador', 'rechazar -> borrador';
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+do $$ begin
+  assert (select motivo_rechazo from deals where id='33333333-3333-3333-3333-333333333333') = 'Faltan fotos y el NOI no cuadra', 'el vendedor ve el motivo';
+  assert (select status from deals where id='33333333-3333-3333-3333-333333333333') = 'borrador', 'volvió a borrador';
+  -- no puede borrar ni falsear el motivo, pero sí reenviar a revisión
+  update deals set motivo_rechazo = null where id='33333333-3333-3333-3333-333333333333';
+  assert (select motivo_rechazo from deals where id='33333333-3333-3333-3333-333333333333') is not null, 'el vendedor no borra el motivo';
+  update deals set status = 'en_revision' where id='33333333-3333-3333-3333-333333333333';
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1', 'authenticated');
+do $$ begin
+  assert public.moderar_deal('33333333-3333-3333-3333-333333333333', 'aprobar') = 'publicado', 'aprobar -> publicado';
+  assert (select published_at from deals where id='33333333-3333-3333-3333-333333333333') is not null, 'published_at al publicar';
+  assert (select motivo_rechazo from deals where id='33333333-3333-3333-3333-333333333333') is null, 'aprobar limpia el motivo';
+  begin perform public.moderar_deal('33333333-3333-3333-3333-333333333333', 'aprobar'); raise exception 'DEBIO FALLAR: doble aprobación';
+  exception when others then assert sqlerrm like '%Solo se aprueban%', sqlerrm; end;
+  begin perform public.moderar_deal('33333333-3333-3333-3333-333333333333', 'rechazar', 'motivo suficientemente largo'); raise exception 'DEBIO FALLAR: rechazar publicado';
+  exception when others then assert sqlerrm like '%Solo se rechazan%', sqlerrm; end;
+end $$;
+select pg_temp.reset();
+-- publicado: lo ve cualquiera; al despublicar desaparece del público
+select pg_temp.as_user('', 'anon');
+do $$ begin assert (select count(*) from deals where id='33333333-3333-3333-3333-333333333333') = 1, 'publicado es público'; end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1', 'authenticated');
+do $$ begin assert public.moderar_deal('33333333-3333-3333-3333-333333333333', 'despublicar', 'Reporte de duplicado, en revisión') = 'borrador', 'despublicar -> borrador'; end $$;
+select pg_temp.reset();
+select pg_temp.as_user('', 'anon');
+do $$ begin assert (select count(*) from deals where id='33333333-3333-3333-3333-333333333333') = 0, 'despublicado ya no es público'; end $$;
+select pg_temp.reset();
+
+-- Bitácora: 3 acciones sobre el deal, con detalle completo, solo legible por admin
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1', 'authenticated');
+do $$ declare r record; begin
+  assert (select count(*) from admin_audit where entidad='deal' and entidad_id='33333333-3333-3333-3333-333333333333') = 3, 'tres acciones auditadas';
+  assert (select array_agg(accion order by id) from admin_audit where entidad_id='33333333-3333-3333-3333-333333333333') = array['rechazar','aprobar','despublicar'], 'orden de acciones';
+  select * into r from admin_audit where accion='rechazar' and entidad_id='33333333-3333-3333-3333-333333333333';
+  assert r.admin_id = auth.uid() and r.detalle->>'de' = 'en_revision' and r.detalle->>'a' = 'borrador' and r.detalle->>'motivo' = 'Faltan fotos y el NOI no cuadra', 'detalle de auditoría';
+end $$;
+select pg_temp.reset();
+
+-- Verificación de usuarios
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1', 'authenticated');
+do $$ begin
+  begin perform public.verificar_usuario('00000000-0000-0000-0000-0000000000b2', 'rechazado'); raise exception 'DEBIO FALLAR: rechazo sin nota';
+  exception when others then assert sqlerrm like '%motivo%', sqlerrm; end;
+  begin perform public.verificar_usuario('00000000-0000-0000-0000-0000000000c1', 'verificado'); raise exception 'DEBIO FALLAR: sobre un admin';
+  exception when others then assert sqlerrm like '%admin%', sqlerrm; end;
+  begin perform public.verificar_usuario(gen_random_uuid(), 'verificado'); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%no encontrado%', sqlerrm; end;
+  perform public.verificar_usuario('00000000-0000-0000-0000-0000000000a1', 'verificado', 'Registro de asesor validado');
+  perform public.verificar_usuario('00000000-0000-0000-0000-0000000000b2', 'rechazado', 'Datos de contacto falsos');
+  assert (select estado_verificacion from profiles where id='00000000-0000-0000-0000-0000000000a1') = 'verificado', 'verificado';
+  assert (select estado_verificacion from profiles where id='00000000-0000-0000-0000-0000000000b2') = 'rechazado', 'rechazado';
+  -- revocar
+  perform public.verificar_usuario('00000000-0000-0000-0000-0000000000a1', 'pendiente');
+  assert (select nota_verificacion from profiles where id='00000000-0000-0000-0000-0000000000a1') is null, 'revocar limpia la nota';
+  perform public.verificar_usuario('00000000-0000-0000-0000-0000000000a1', 'verificado', 'Registro de asesor validado');
+  assert (select count(*) from admin_audit where entidad = 'usuario') = 4, 'verificaciones auditadas';
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2', 'authenticated');
+do $$ begin assert (select nota_verificacion from profiles where id = auth.uid()) = 'Datos de contacto falsos', 'el usuario ve el motivo de su rechazo'; end $$;
+select pg_temp.reset();
+select pg_temp.as_user('', 'anon');
+do $$ begin assert (select count(*) from seller_public where id='00000000-0000-0000-0000-0000000000a1') = 1, 'seller_public sigue sin exponer la nota'; 
+  assert not exists (select 1 from information_schema.columns where table_name='seller_public' and column_name='nota_verificacion'), 'la vista pública no incluye la nota'; end $$;
+select pg_temp.reset();
+
+-- Reabrir NDA rechazado
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+do $$ begin
+  begin perform public.reabrir_nda((select id from ndas where user_id='00000000-0000-0000-0000-0000000000b3'), 'motivo suficientemente largo'); raise exception 'DEBIO FALLAR: el vendedor no reabre';
+  exception when others then assert sqlerrm like '%No autorizado%', sqlerrm; end;
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1', 'authenticated');
+do $$ declare nid uuid; begin
+  select id into nid from ndas where user_id='00000000-0000-0000-0000-0000000000b3' and deal_id='11111111-1111-1111-1111-111111111111';
+  begin perform public.reabrir_nda(nid, 'corto'); raise exception 'DEBIO FALLAR: motivo corto';
+  exception when others then assert sqlerrm like '%motivo%', sqlerrm; end;
+  begin perform public.reabrir_nda((select id from ndas where user_id='00000000-0000-0000-0000-0000000000b1'), 'motivo suficientemente largo'); raise exception 'DEBIO FALLAR: aprobado no se reabre';
+  exception when others then assert sqlerrm like '%Solo se reabren%', sqlerrm; end;
+  perform public.reabrir_nda(nid, 'Error del vendedor al rechazar');
+  assert (select estado from ndas where id = nid) = 'firmado', 'reabierto -> firmado';
+  assert (select resuelto_por from ndas where id = nid) is null, 'resuelto_por limpio';
+  begin perform public.reabrir_nda(nid, 'motivo suficientemente largo'); raise exception 'DEBIO FALLAR: ya reabierto';
+  exception when others then assert sqlerrm like '%Solo se reabren%', sqlerrm; end;
+  assert (select count(*) from admin_audit where entidad = 'nda' and accion = 'reabrir') = 1, 'reapertura auditada';
+end $$;
+select pg_temp.reset();
+-- El vendedor ahora puede decidir; el investigador sigue sin acceso hasta que apruebe
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b3', 'authenticated');
+do $$ begin assert (select count(*) from deal_private) = 0, 'reabierto no da acceso por sí solo'; end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+update ndas set estado = 'aprobado' where user_id='00000000-0000-0000-0000-0000000000b3' and estado = 'firmado';
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b3', 'authenticated');
+do $$ begin assert (select count(*) from deal_private) = 1, 'tras la aprobación del vendedor, sí hay acceso'; end $$;
+select pg_temp.reset();
+
+-- Resumen y vistas del admin
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1', 'authenticated');
+do $$ declare v jsonb; vistas_antes int; begin
+  v := public.admin_resumen();
+  assert (select sum(value::int) from jsonb_each_text(v->'deals')) = (select count(*) from deals), 'resumen: suma de deals';
+  assert (v->'deals'->>'en_revision')::int = 1, 'resumen: 1 en revisión (el 4444)';
+  assert (v->>'ndas_firmados')::int >= 3, 'resumen: ndas firmados';
+  assert (v->'usuarios'->>'rechazado')::int = 1, 'resumen: usuarios rechazados';
+end $$;
+select pg_temp.reset();
+do $$ begin perform set_config('dealmx.vistas_antes', (select count(*) from deal_views)::text, false); end $$;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1', 'authenticated');
+select public.record_deal_view('11111111-1111-1111-1111-111111111111');
+select pg_temp.reset();
+do $$ begin assert (select count(*) from deal_views)::text = current_setting('dealmx.vistas_antes'), 'las vistas de un admin no cuentan'; end $$;
+
 \echo 'RLS: TODAS LAS PRUEBAS PASARON'
