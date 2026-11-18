@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-export interface BusquedaGuardada { id: string; nombre: string; frecuencia: "diaria" | "semanal"; activa: boolean; resumen: string; href: string }
+export interface BusquedaGuardada { id: string; nombre: string; frecuencia: "diaria" | "semanal"; activa: boolean; resumen: string; href: string; ultimoEnvio?: string | null }
 
 export function BusquedasGuardadas({ inicial }: { inicial: BusquedaGuardada[] }) {
   const sb = useMemo(() => createClient(), []);
@@ -34,6 +34,7 @@ export function BusquedasGuardadas({ inicial }: { inicial: BusquedaGuardada[] })
             <div className="min-w-0">
               <a className="font-medium underline" href={b.href}>{b.nombre}</a>
               <div className="text-xs text-muted-foreground">{b.resumen}</div>
+              <div className="text-xs text-muted-foreground">{b.activa ? (b.ultimoEnvio ? `Último correo: ${new Date(b.ultimoEnvio).toLocaleDateString("es-MX", { dateStyle: "medium" })}` : "Sin correos enviados aún") : "Alertas en pausa"}</div>
             </div>
             <div className="flex items-center gap-2">
               <select aria-label={`Frecuencia de ${b.nombre}`} value={b.frecuencia} onChange={(e) => actualizar(b.id, { frecuencia: e.target.value as "diaria" | "semanal" })} className="rounded border border-border p-1 text-xs">

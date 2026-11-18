@@ -1,7 +1,7 @@
 # DealMX (MVP)
 
 Marketplace de oportunidades de inversión inmobiliaria en México. Next.js 14 + Supabase.
-**Estado:** Fase 5 de 7 (dashboards). Ver el plan por fases en el historial del proyecto.
+**Estado:** Fase 6 de 7 (alertas por correo). Ver el plan por fases en el historial del proyecto.
 
 ## Variables de entorno
 Copia `.env.example` a `.env.local`. Solo `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` son necesarias en la Fase 1.
@@ -75,6 +75,27 @@ el texto/versión EXACTOS de la plantilla (el cliente no puede fijarlos ni el es
 - No hay "no leídos" en el chat (no existe estado de lectura): se muestra el último mensaje de cada hilo.
 - Los deals no se pueden editar después de crearlos (solo cambiar estado y documentos); editar queda fuera del MVP.
 
+## Alertas por correo (Fase 6)
+Un cron diario (`vercel.json`: `0 14 * * *` UTC = 8:00 hora de CDMX) llama a `GET /api/cron/alerts`, que cruza los deals publicados
+con las búsquedas guardadas (`saved_searches`) y envía **un correo resumen por usuario** con Resend.
+- **Autenticación:** Vercel envía `Authorization: Bearer $CRON_SECRET`; sin `CRON_SECRET` configurado el endpoint queda cerrado (401).
+- **Ventana:** deals con `published_at` posterior a `last_sent_at` (o a `created_at` si la búsqueda nunca ha enviado). Una búsqueda solo
+  toca correo si pasó su periodo (diaria ≥ 22 h, semanal ≥ 6 d 22 h; la tolerancia absorbe el desfase del cron) **y** hay coincidencias.
+  Sin coincidencias no se modifica nada: la ventana sigue creciendo y no se pierde ningún deal.
+- `last_sent_at` se fija al inicio de la corrida y **solo tras un envío exitoso**, y solo en las búsquedas incluidas en ese correo. Si Resend falla se
+  reintenta en la siguiente corrida. Además cada envío lleva `Idempotency-Key` (Resend lo respeta 24 h) contra duplicados por doble disparo.
+- **Privacidad:** el cron usa service role (sin RLS), por eso solo lee columnas del teaser público y el correo renderiza únicamente campos
+  explícitos (nunca dirección, coordenadas ni descripción completa). Solo se escribe a correos **confirmados** (evita spam a terceros).
+  Se omiten búsquedas sin filtros útiles (coincidirían con todo).
+- **Bajas:** cada correo trae `List-Unsubscribe` (one-click) y enlaces firmados (HMAC con `UNSUBSCRIBE_SECRET`): "Pausar esta búsqueda" y
+  "Dejar de recibir todas". El `GET` solo muestra una confirmación (los escáneres de correo no dan de baja a nadie); la baja es un `POST`.
+  También se gestionan en el dashboard (frecuencia, pausa, último correo).
+- **Variables:** `RESEND_API_KEY`, `MAIL_FROM` (dominio verificado en Resend; con el sandbox solo llega a tu propia cuenta), `CRON_SECRET`,
+  `UNSUBSCRIBE_SECRET`, `NEXT_PUBLIC_SITE_URL`, `ALERTS_DRY_RUN`. Genera secretos con `openssl rand -hex 32`.
+- **Límites:** hasta 500 búsquedas por corrida (se atienden primero las más rezagadas; `truncado: true` en la respuesta) y `maxDuration = 60 s`.
+  Si el volumen crece hay que paginar o mover el trabajo a una cola. En Vercel Hobby el cron puede retrasarse hasta una hora.
+- Si el correo sale pero falla el `UPDATE` de `last_sent_at`, se reporta en `errores` y la clave de idempotencia evita el duplicado ese día.
+
 ## Seguridad de datos privados
 Dirección exacta, lat/lng exactas y descripción completa viven en `deal_private`, legible solo por el
 dueño, admin o un usuario con NDA `aprobado` (RLS en la base de datos, no en el frontend).
@@ -103,7 +124,22 @@ Con las dos cuentas de la Fase 4: como inversionista abre una ficha → ★ favo
 aparece en "NDA" en `/dashboard/inversionista`; arrástrala a "Oferta" y añade una nota. Guarda una búsqueda en `/buscar` y gestiónala ahí.
 Como vendedor: `/dashboard/vendedor` → aprueba la solicitud, abre el hilo, sube un documento y marca el deal "en negociación".
 
+## Cómo probar la Fase 6 localmente
+```bash
+# 1) Variables en .env.local: CRON_SECRET, UNSUBSCRIBE_SECRET, NEXT_PUBLIC_SITE_URL=http://localhost:3000, SUPABASE_SERVICE_ROLE_KEY
+# 2) Guarda una búsqueda en /buscar (p. ej. segmento Industrial) y fuerza que "toque" (el seed ya está publicado):
+psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "update saved_searches set last_sent_at = now() - interval '2 days'"
+# 3) Ensayo sin enviar ni modificar nada: devuelve conteos
+curl -H "Authorization: Bearer $CRON_SECRET" "http://localhost:3000/api/cron/alerts?dry=1"
+# 4) Envío real (requiere RESEND_API_KEY y MAIL_FROM; con el sandbox, usa tu propio correo en la cuenta)
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/alerts
+```
+Los correos de Resend salen de verdad (no pasan por Inbucket). Abre el enlace de baja del correo: debe mostrar una confirmación y, al pulsar el botón, pausar la alerta.
+
 ## Pendientes conocidos
+- Fase 6: nunca se ha enviado un correo real ni ejecutado el cron contra un Supabase real. Verificado por piezas: orquestación con dobles,
+  consultas HTTP exactas capturadas, rutas con HTTP real (autenticación y fallos controlados), render del correo y firma de enlaces.
+  No hay correo al vendedor por NDA o mensajes nuevos (no pedido en el alcance de alertas).
 - Fase 5: las páginas de dashboard no se han ejecutado contra un Supabase real; verificado por piezas (SQL, componentes con red simulada).
 - El enlace "Mi panel" del admin cae en el dashboard de inversionista hasta que exista `/admin` (Fase 7).
 - Fase 4: el flujo completo (firma real → aprobación → datos → chat con Realtime) no se ha ejecutado contra un Supabase real;

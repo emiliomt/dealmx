@@ -23,7 +23,7 @@ export default async function DashboardInversionista() {
   const COL = "id,titulo,segmento,tipo_operacion,estado_clave,municipio_clave,precio,cap_rate,m2_construccion,m2_terreno,monto_capital_buscado,es_ejemplo,status,deal_photos(path,orden)";
   const [fav, busquedas, ndas, pipe] = await Promise.all([
     sb.from("favorites").select(`created_at,deals(${COL})`).order("created_at", { ascending: false }),
-    sb.from("saved_searches").select("id,nombre,filtros,frecuencia,activa").order("created_at", { ascending: false }),
+    sb.from("saved_searches").select("id,nombre,filtros,frecuencia,activa,last_sent_at").order("created_at", { ascending: false }),
     sb.from("ndas").select("id,estado,firmado_at,deals(id,titulo,status)").order("created_at", { ascending: false }),
     sb.from("pipeline_items").select("id,deal_id,etapa,notas,deals(titulo,segmento,precio)").order("updated_at", { ascending: false }),
   ]);
@@ -46,7 +46,7 @@ export default async function DashboardInversionista() {
   const guardadas: BusquedaGuardada[] = filas.map((b, i) => {
     const f = filtrosParseados[i];
     const qs = filtrosToParams(f).toString();
-    return { id: b.id, nombre: b.nombre, frecuencia: b.frecuencia, activa: b.activa,
+    return { id: b.id, nombre: b.nombre, frecuencia: b.frecuencia, activa: b.activa, ultimoEnvio: b.last_sent_at,
       resumen: describirFiltros(f, { estado: f.estado ? nb.estado(f.estado) : undefined, municipio: f.estado && f.municipio ? nb.municipio(f.estado, f.municipio) : undefined }),
       href: qs ? `/buscar?${qs}` : "/buscar" };
   });

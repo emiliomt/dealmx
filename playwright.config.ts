@@ -21,6 +21,7 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       E2E_HARNESS: "1", NEXT_PUBLIC_E2E: "1",
+      CRON_SECRET: "e2e-cron-secret", SUPABASE_SERVICE_ROLE_KEY: "e2e-service-key", UNSUBSCRIBE_SECRET: "e2e-unsub-secret", NEXT_PUBLIC_SITE_URL: "http://localhost:3100",
       NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321", NEXT_PUBLIC_SUPABASE_ANON_KEY: "x",
     },
   },
