@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { LegalFooter } from "@/components/layout/legal-banner";
+import { NavUsuario } from "@/components/layout/nav-usuario";
 import { CurrencyToggle, MoneyProvider } from "@/components/money-provider";
 
 export const metadata: Metadata = {
@@ -17,7 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <nav className="mx-auto flex max-w-6xl items-center justify-between">
             <a href="/" className="text-lg font-bold text-primary">DealMX</a>
             <div className="flex gap-4 text-sm">
-              <a href="/buscar">Buscar</a><a href="/publicar">Publicar</a><a href="/auth/login">Entrar</a><CurrencyToggle />
+              <a href="/buscar">Buscar</a><a href="/publicar">Publicar</a><NavUsuario /><CurrencyToggle />
             </div>
           </nav>
         </header>

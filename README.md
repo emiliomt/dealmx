@@ -1,7 +1,7 @@
 # DealMX (MVP)
 
 Marketplace de oportunidades de inversión inmobiliaria en México. Next.js 14 + Supabase.
-**Estado:** Fase 4 de 7 (NDA + data room + chat). Ver el plan por fases en el historial del proyecto.
+**Estado:** Fase 5 de 7 (dashboards). Ver el plan por fases en el historial del proyecto.
 
 ## Variables de entorno
 Copia `.env.example` a `.env.local`. Solo `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` son necesarias en la Fase 1.
@@ -63,6 +63,18 @@ el texto/versión EXACTOS de la plantilla (el cliente no puede fijarlos ni el es
 - `test:rls` incluye una réplica mínima de `storage` para ejercitar las políticas del bucket `data-room`; sigue siendo una réplica,
   no el servicio real.
 
+## Dashboards (Fase 5)
+- `/dashboard` redirige por rol. **Inversionista** (`/dashboard/inversionista`): pipeline kanban (arrastrar y soltar nativo + selector por
+  tarjeta para teclado/móvil, con notas), mis NDAs, búsquedas guardadas (frecuencia, pausar, eliminar) y favoritos. En la ficha hay
+  botones de favorito y de pipeline.
+- Al firmarse un NDA el deal pasa a la etapa `nda` del pipeline, solo si no existía o seguía en `visto` (trigger `sync_pipeline_from_nda`).
+- **Vendedor** (`/dashboard/vendedor`): resumen, bandeja de NDAs por decidir (todos sus deals), mis deals con vistas/NDAs/mensajes,
+  cambio de estado (las transiciones válidas las impone la BD), alta y baja de documentos del data room, y mensajes por hilo.
+- Los datos agregados del vendedor salen de funciones SQL acotadas por `auth.uid()` (`deals_vendedor_stats`, `solicitudes_pendientes_vendedor`,
+  `hilos_vendedor`); no exponen teléfono ni correo.
+- No hay "no leídos" en el chat (no existe estado de lectura): se muestra el último mensaje de cada hilo.
+- Los deals no se pueden editar después de crearlos (solo cambiar estado y documentos); editar queda fuera del MVP.
+
 ## Seguridad de datos privados
 Dirección exacta, lat/lng exactas y descripción completa viven en `deal_private`, legible solo por el
 dueño, admin o un usuario con NDA `aprobado` (RLS en la base de datos, no en el frontend).
@@ -86,7 +98,14 @@ haz clic en clusters y puntos del mapa, y guarda una búsqueda con sesión inici
 4. Como vendedor: abre tu deal → "Panel del vendedor" → Aprobar → "Abrir chat".
 5. Como inversionista: recarga → ya ves dirección, descripción, data room (descarga) y el chat.
 
+## Cómo probar la Fase 5 localmente
+Con las dos cuentas de la Fase 4: como inversionista abre una ficha → ★ favoritos y "Mi pipeline"; firma el NDA y mira cómo la tarjeta
+aparece en "NDA" en `/dashboard/inversionista`; arrástrala a "Oferta" y añade una nota. Guarda una búsqueda en `/buscar` y gestiónala ahí.
+Como vendedor: `/dashboard/vendedor` → aprueba la solicitud, abre el hilo, sube un documento y marca el deal "en negociación".
+
 ## Pendientes conocidos
+- Fase 5: las páginas de dashboard no se han ejecutado contra un Supabase real; verificado por piezas (SQL, componentes con red simulada).
+- El enlace "Mi panel" del admin cae en el dashboard de inversionista hasta que exista `/admin` (Fase 7).
 - Fase 4: el flujo completo (firma real → aprobación → datos → chat con Realtime) no se ha ejecutado contra un Supabase real;
   está probado por piezas: RLS/Storage/RPC en SQL, ruta de firma con clientes simulados y componentes en Chromium con red simulada.
 - No hay correo al vendedor cuando llega una solicitud o un mensaje (Fase 6 reutilizará Resend).

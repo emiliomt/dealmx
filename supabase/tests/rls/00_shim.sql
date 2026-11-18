@@ -17,6 +17,13 @@ create or replace function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
 grant usage on schema auth to anon, authenticated, service_role;
+
+-- Privilegios por defecto como en Supabase: todo objeto nuevo en public queda accesible a anon/authenticated/service_role
+-- y es RLS (o los revoke explícitos de cada migración) quien restringe.
+grant usage on schema public to anon, authenticated, service_role;
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
 grant execute on function auth.uid() to anon, authenticated, service_role;
 
 -- Realtime y Storage (réplica mínima de la estructura de Supabase para ejercitar las políticas del data room)

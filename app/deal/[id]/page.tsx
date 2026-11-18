@@ -8,6 +8,8 @@ import { NdaPanel, type EstadoNda } from "@/components/nda/nda-panel";
 import { PanelVendedor, type Solicitante, type Vistas } from "@/components/nda/panel-vendedor";
 import { DataRoom } from "@/components/deals/data-room";
 import { Chat } from "@/components/chat/chat";
+import { AccionesInversionista } from "@/components/dashboard/acciones-inversionista";
+import { esEtapa } from "@/lib/pipeline";
 import { AVISO_LEGAL } from "@/components/layout/legal-banner";
 import { REGIMENES, SEGMENTOS, TIPOS_OPERACION, fotoUrl } from "@/lib/catalogos";
 import { formatM2, formatPct } from "@/lib/format";
@@ -34,12 +36,14 @@ export default async function DealPage({ params }: { params: { id: string } }) {
   const { data: estado } = await sb.from("inegi_estados").select("nombre").eq("clave", deal.estado_clave).maybeSingle();
   const esDueno = !!user && user.id === deal.seller_id;
   // Todo con RLS: cada consulta solo devuelve filas si el usuario tiene derecho.
-  const [{ data: miNda }, { data: plantilla }, { data: docs }, rpcSolicitantes, rpcVistas] = await Promise.all([
+  const [{ data: miNda }, { data: plantilla }, { data: docs }, rpcSolicitantes, rpcVistas, { data: miFav }, { data: miPipe }] = await Promise.all([
     user && !esDueno ? sb.from("ndas").select("estado").eq("deal_id", deal.id).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     privado || !user || esDueno ? Promise.resolve({ data: null }) : sb.from("nda_templates").select("version,texto").eq("activo", true).maybeSingle(),
     privado ? sb.from("deal_documents").select("id,nombre,tipo").eq("deal_id", deal.id).order("created_at") : Promise.resolve({ data: [] }),
     esDueno ? sb.rpc("solicitantes_nda", { p_deal: deal.id }) : Promise.resolve({ data: null }),
     esDueno ? sb.rpc("vistas_deal", { p_deal: deal.id }) : Promise.resolve({ data: null }),
+    user && !esDueno ? sb.from("favorites").select("deal_id").eq("deal_id", deal.id).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
+    user && !esDueno ? sb.from("pipeline_items").select("etapa").eq("deal_id", deal.id).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
   const kpis: [string, React.ReactNode][] = [
@@ -81,6 +85,8 @@ export default async function DealPage({ params }: { params: { id: string } }) {
           Este deal es un EJEMPLO FICTICIO con fines de demostración. No corresponde a un inmueble real.
         </p>
       )}
+
+      {user && !esDueno && <AccionesInversionista dealId={deal.id} userId={user.id} favorito={!!miFav} etapa={esEtapa(miPipe?.etapa) ? miPipe.etapa : null} />}
 
       <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         {fotos && fotos.length > 0

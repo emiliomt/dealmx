@@ -1,10 +1,7 @@
 -- Pruebas de RLS. Cualquier aserción fallida lanza excepción y el runner sale con error.
 \set ON_ERROR_STOP on
 
-grant usage on schema public to anon, authenticated, service_role;
-grant all on all tables in schema public to authenticated, service_role;
-grant select on all tables in schema public to anon;
-grant execute on all functions in schema public to anon, authenticated, service_role;
+-- (los privilegios por defecto de Supabase se emulan en 00_shim.sql, antes de crear las tablas)
 
 -- Datos base (como superusuario/postgres: no aplica RLS)
 insert into auth.users (id, raw_user_meta_data) values
@@ -380,5 +377,101 @@ select pg_temp.reset();
 
 -- Realtime: messages quedó en la publicación
 do $$ begin assert exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and tablename='messages'), 'messages en supabase_realtime'; end $$;
+
+-- ===== Fase 5: pipeline, favoritos y funciones del dashboard =====
+insert into auth.users (id, raw_user_meta_data) values
+ ('00000000-0000-0000-0000-0000000000b5', '{"rol":"inversionista","nombre":"Inv Cinco"}'),
+ ('00000000-0000-0000-0000-0000000000b6', '{"rol":"inversionista","nombre":"Inv Seis"}'),
+ ('00000000-0000-0000-0000-0000000000b7', '{"rol":"inversionista","nombre":"Inv Siete"}');
+-- b6 ya seguía el deal ('visto'); b7 lo había descartado; b5 no tenía nada
+insert into pipeline_items (user_id, deal_id, etapa) values
+ ('00000000-0000-0000-0000-0000000000b6', '11111111-1111-1111-1111-111111111111', 'visto'),
+ ('00000000-0000-0000-0000-0000000000b7', '11111111-1111-1111-1111-111111111111', 'descartado');
+insert into ndas (deal_id, user_id, estado) values
+ ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-0000000000b6','solicitado'),
+ ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-0000000000b7','solicitado');
+insert into ndas (deal_id, user_id, estado, firma_nombre, firmado_at) values
+ ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-0000000000b5','firmado','Inv Cinco Firma', now());
+update ndas set estado = 'firmado', firma_nombre = 'Firma', firmado_at = now()
+ where user_id in ('00000000-0000-0000-0000-0000000000b6','00000000-0000-0000-0000-0000000000b7');
+do $$ begin
+  assert (select etapa from pipeline_items where user_id='00000000-0000-0000-0000-0000000000b5') = 'nda', 'sin item previo -> nda';
+  assert (select etapa from pipeline_items where user_id='00000000-0000-0000-0000-0000000000b6') = 'nda', 'visto -> nda';
+  assert (select etapa from pipeline_items where user_id='00000000-0000-0000-0000-0000000000b7') = 'descartado', 'descartado NO se pisa';
+end $$;
+-- el inversionista avanza a 'oferta'; la aprobación posterior no lo regresa
+update pipeline_items set etapa = 'oferta' where user_id='00000000-0000-0000-0000-0000000000b5';
+update ndas set estado = 'aprobado' where user_id='00000000-0000-0000-0000-0000000000b5';
+do $$ begin assert (select etapa from pipeline_items where user_id='00000000-0000-0000-0000-0000000000b5') = 'oferta', 'oferta NO se pisa'; end $$;
+update ndas set estado = 'firmado' where user_id='00000000-0000-0000-0000-0000000000b5'; -- (superusuario) lo dejamos pendiente para las pruebas del vendedor
+do $$ begin
+  begin update pipeline_items set notas = repeat('x', 2001) where user_id='00000000-0000-0000-0000-0000000000b6'; raise exception 'DEBIO FALLAR';
+  exception when check_violation then null; end;
+end $$;
+
+-- RLS del pipeline y favoritos: solo lo propio
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b6', 'authenticated');
+do $$ begin
+  assert (select count(*) from pipeline_items) = 1, 'b6 ve solo su pipeline';
+  update pipeline_items set etapa = 'due_diligence', notas = 'Revisar contratos' where user_id = auth.uid();
+  assert (select etapa from pipeline_items) = 'due_diligence', 'mueve su tarjeta';
+  update pipeline_items set etapa = 'cierre' where user_id <> auth.uid();
+  assert (select count(*) from pipeline_items) = 1, 'no toca ajenas';
+  insert into favorites (user_id, deal_id) values (auth.uid(), '11111111-1111-1111-1111-111111111111');
+  begin
+    insert into favorites (user_id, deal_id) values ('00000000-0000-0000-0000-0000000000b7', '11111111-1111-1111-1111-111111111111');
+    raise exception 'DEBIO FALLAR: favorito a nombre de otro';
+  exception when others then assert sqlerrm like '%row-level security%', sqlerrm; end;
+  begin
+    insert into pipeline_items (user_id, deal_id, etapa) values ('00000000-0000-0000-0000-0000000000b7', '22222222-2222-2222-2222-222222222222', 'visto');
+    raise exception 'DEBIO FALLAR: pipeline a nombre de otro';
+  exception when others then assert sqlerrm like '%row-level security%', sqlerrm; end;
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b7', 'authenticated');
+do $$ begin
+  assert (select count(*) from favorites) = 0, 'b7 NO ve favoritos de b6';
+  assert (select count(*) from pipeline_items where notas is not null) = 0, 'b7 NO ve notas de b6';
+end $$;
+select pg_temp.reset();
+
+-- Funciones del vendedor
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+do $$ declare r record; begin
+  assert (select count(*) from public.deals_vendedor_stats()) = 2, 'stats: una fila por deal propio';
+  select * into r from public.deals_vendedor_stats() where deal_id = '11111111-1111-1111-1111-111111111111';
+  assert r.vistas_total = 4, 'vistas_total, fue ' || r.vistas_total;
+  assert r.ndas_pendientes = 3, 'ndas_pendientes (b5,b6,b7), fue ' || r.ndas_pendientes;
+  assert r.ndas_aprobados = 2, 'ndas_aprobados (b1,b2), fue ' || r.ndas_aprobados;
+  assert r.mensajes = 2, 'mensajes';
+  assert (select count(*) from public.solicitudes_pendientes_vendedor()) = 3, 'solicitudes pendientes = 3';
+  assert (select count(*) from public.solicitudes_pendientes_vendedor() where nombre = 'Inv Cinco' and firma_nombre = 'Inv Cinco Firma') = 1, 'nombre y firma';
+  assert (select count(*) from public.hilos_vendedor()) = 1, 'un hilo';
+  select * into r from public.hilos_vendedor();
+  assert r.nombre = 'Inv Con NDA' and r.total = 2 and r.ultimo_body = 'Hola, con gusto' and r.ultimo_sender = '00000000-0000-0000-0000-0000000000a1', 'último mensaje del hilo';
+  assert not exists (select 1 from information_schema.columns where table_name in ('hilos_vendedor','solicitudes_pendientes_vendedor') and column_name in ('telefono','email')), 'sin datos de contacto';
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a2', 'authenticated');
+do $$ begin
+  assert (select count(*) from public.deals_vendedor_stats()) = 0, 'otro vendedor: sin stats ajenas';
+  assert (select count(*) from public.solicitudes_pendientes_vendedor()) = 0, 'otro vendedor: sin solicitudes ajenas';
+  assert (select count(*) from public.hilos_vendedor()) = 0, 'otro vendedor: sin hilos ajenos';
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1', 'authenticated');
+do $$ begin
+  assert (select count(*) from public.hilos_vendedor()) = 0, 'el inversionista no es vendedor: sin hilos';
+  assert (select count(*) from public.solicitudes_pendientes_vendedor()) = 0, 'el inversionista no ve solicitudes';
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('', 'anon');
+do $$ begin
+  begin perform public.hilos_vendedor(); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%permission denied%', sqlerrm; end;
+  begin perform public.deals_vendedor_stats(); raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%permission denied%', sqlerrm; end;
+end $$;
+select pg_temp.reset();
 
 \echo 'RLS: TODAS LAS PRUEBAS PASARON'
