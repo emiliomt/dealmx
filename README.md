@@ -106,8 +106,17 @@ Qué demuestra cada una (y qué **no**):
    npx supabase link --project-ref <tu-ref>
    npx supabase db push        # aplica supabase/migrations/* (el seed NO se aplica: en producción no cargues deals ficticios)
    ```
-   Si prefieres no usar la CLI, pega `supabase/migrations/0001…0008` **en orden** en el SQL Editor.
-   Verifica en el dashboard que existan los buckets `deal-photos` (público) y `data-room` (privado) y que `messages` esté en la publicación `supabase_realtime`.
+   - Si falla la conexión (`no route to host`): la conexión directa de Supabase es solo IPv6. Usa el **Session pooler** (Project Settings → Database →
+     Connection string → *Session pooler*): `npx supabase db push --db-url "postgresql://postgres.<ref>:<CONTRASEÑA>@aws-0-<región>.pooler.supabase.com:5432/postgres"`.
+     La contraseña es la de la base de datos (no las llaves anon/service_role) y se restablece en Project Settings → Database.
+   - Sin CLI: en el SQL Editor pega y ejecuta **cada archivo por separado, en orden `0001`→`0008`** (así, si uno falla, sabes cuál).
+   - Si una migración falla, pásame/copia el mensaje exacto. La CLI normalmente aplica cada archivo en una transacción (no lo he podido comprobar); si dudas del estado en que
+     quedó, ejecuta `supabase/verify.sql` antes de reintentar: te dice qué piezas existen y cuáles faltan. Las migraciones no están escritas para ejecutarse dos veces.
+   - **Verifica**: pega `supabase/verify.sql` en el SQL Editor (solo lectura). Debe devolver 13 comprobaciones y un `RESUMEN` en `OK`: catálogos INEGI,
+     las 15 tablas con RLS activo, buckets y políticas de Storage, trigger de perfiles, Realtime en `messages`, que el rol anónimo no pueda ejecutar las funciones
+     privilegiadas ni escribir en la bitácora, y que `deals` no contenga campos privados. Cualquier `FALLA` indica qué revisar.
+     (`npm run test:rls` ejecuta este mismo script sobre una base de pruebas y se comprobó que detecta cada tipo de fallo; sobre un Supabase real puede haber
+     diferencias que interpretar.)
 3. **Auth** (Authentication → URL Configuration): *Site URL* = tu dominio; añade `https://<dominio>/auth/callback` a *Redirect URLs*.
    **Activa "Confirm email"** (en local está desactivado por comodidad; las alertas solo se envían a correos confirmados) y configura un
    **SMTP propio** (el correo integrado de Supabase tiene un límite muy bajo, no es para producción).
