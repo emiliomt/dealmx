@@ -1,7 +1,7 @@
 # DealMX (MVP)
 
 Marketplace de oportunidades de inversión inmobiliaria en México. Next.js 14 + Supabase.
-**Estado:** Fase 3 de 7 (búsqueda + mapa). Ver el plan por fases en el historial del proyecto.
+**Estado:** Fase 4 de 7 (NDA + data room + chat). Ver el plan por fases en el historial del proyecto.
 
 ## Variables de entorno
 Copia `.env.example` a `.env.local`. Solo `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` son necesarias en la Fase 1.
@@ -49,6 +49,20 @@ NOI; deuda con amortización mensual; salida al año 5/10 capitalizando el NOI s
 - "Guardar búsqueda": requiere sesión y al menos un filtro; guarda en `saved_searches`. El envío de alertas llega en la Fase 6.
 - `app/e2e/mapa` es un arnés de pruebas, activo solo con `E2E_HARNESS=1` (404 en cualquier otro caso).
 
+## NDA, data room y chat (Fase 4)
+Flujo: el inversionista firma en la ficha → `POST /api/nda/firmar` (servidor, service role) guarda nombre, timestamp, IP y
+el texto/versión EXACTOS de la plantilla (el cliente no puede fijarlos ni el estado) → el vendedor aprueba o rechaza en su panel
+(la ficha de su propio deal) → con `aprobado`, RLS libera dirección exacta, descripción completa, data room y chat.
+- Data room: `GET /api/deals/[id]/documentos/[docId]` valida con RLS y redirige a una URL firmada de 60 s.
+- Chat: un hilo por (deal, inversionista); RLS exige NDA aprobado para leer y escribir. Mensajes nuevos de la otra parte por
+  Supabase Realtime (migración 0006 agrega `messages` a la publicación `supabase_realtime`). Sin Realtime hay que recargar.
+- Vendedor: `solicitantes_nda()` y `vistas_deal()` (funciones SQL) entregan solo nombre/empresa, nunca teléfono ni correo.
+  Una vista por usuario identificado cada 30 min; las anónimas no se deduplican.
+- La IP viene de `x-forwarded-for`/`x-real-ip`: es confiable detrás de Vercel u otro proxy que lo sobrescriba; en local suele ser null.
+- Rechazado/firmado no se puede re-firmar (UNIQUE deal+usuario): para reabrir un caso un admin debe intervenir (Fase 7).
+- `test:rls` incluye una réplica mínima de `storage` para ejercitar las políticas del bucket `data-room`; sigue siendo una réplica,
+  no el servicio real.
+
 ## Seguridad de datos privados
 Dirección exacta, lat/lng exactas y descripción completa viven en `deal_private`, legible solo por el
 dueño, admin o un usuario con NDA `aprobado` (RLS en la base de datos, no en el frontend).
@@ -64,7 +78,19 @@ dueño, admin o un usuario con NDA `aprobado` (RLS en la base de datos, no en el
 `supabase db reset` (aplica la migración 0005 y el seed) → `npm run dev` → `/buscar`: filtra, cambia de página, comparte la URL,
 haz clic en clusters y puntos del mapa, y guarda una búsqueda con sesión iniciada.
 
+## Cómo probar la Fase 4 localmente
+1. Crea dos cuentas: un **vendedor** y un **inversionista** (con `enable_confirmations = false` en local no hace falta correo).
+2. Como vendedor, publica un deal en `/publicar` con un documento y pídele a un admin que lo publique (promueve tu usuario a admin
+   con SQL y usa el panel de la Fase 7, o actualiza `status` a `publicado` desde Studio). Los deals de ejemplo del seed son de otro vendedor.
+3. Como inversionista: abre el deal → firma el NDA → verás "Esperando aprobación".
+4. Como vendedor: abre tu deal → "Panel del vendedor" → Aprobar → "Abrir chat".
+5. Como inversionista: recarga → ya ves dirección, descripción, data room (descarga) y el chat.
+
 ## Pendientes conocidos
+- Fase 4: el flujo completo (firma real → aprobación → datos → chat con Realtime) no se ha ejecutado contra un Supabase real;
+  está probado por piezas: RLS/Storage/RPC en SQL, ruta de firma con clientes simulados y componentes en Chromium con red simulada.
+- No hay correo al vendedor cuando llega una solicitud o un mensaje (Fase 6 reutilizará Resend).
+- El vendedor no puede subir documentos después de publicar (solo en el wizard); se agregará con el dashboard (Fase 5).
 - Fase 3: la página `/buscar` con datos reales no se ha ejecutado contra Supabase; sí están verificados filtros→URL, filtros→PostgREST y el mapa (Playwright).
 - Fase 2 sin prueba de extremo a extremo: wizard, subida a Storage y ficha no se han ejecutado contra un Supabase real.
 - `supabase/config.toml` está escrito a mano (no con `supabase init`).

@@ -4,6 +4,10 @@ import { Money } from "@/components/money-provider";
 import { Calculadora } from "@/components/calculator/calculator";
 import { BadgeEjemplo } from "@/components/deals/deal-card";
 import { ViewTracker } from "@/components/deals/view-tracker";
+import { NdaPanel, type EstadoNda } from "@/components/nda/nda-panel";
+import { PanelVendedor, type Solicitante, type Vistas } from "@/components/nda/panel-vendedor";
+import { DataRoom } from "@/components/deals/data-room";
+import { Chat } from "@/components/chat/chat";
 import { AVISO_LEGAL } from "@/components/layout/legal-banner";
 import { REGIMENES, SEGMENTOS, TIPOS_OPERACION, fotoUrl } from "@/lib/catalogos";
 import { formatM2, formatPct } from "@/lib/format";
@@ -28,6 +32,15 @@ export default async function DealPage({ params }: { params: { id: string } }) {
     sb.auth.getUser(),
   ]);
   const { data: estado } = await sb.from("inegi_estados").select("nombre").eq("clave", deal.estado_clave).maybeSingle();
+  const esDueno = !!user && user.id === deal.seller_id;
+  // Todo con RLS: cada consulta solo devuelve filas si el usuario tiene derecho.
+  const [{ data: miNda }, { data: plantilla }, { data: docs }, rpcSolicitantes, rpcVistas] = await Promise.all([
+    user && !esDueno ? sb.from("ndas").select("estado").eq("deal_id", deal.id).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
+    privado || !user || esDueno ? Promise.resolve({ data: null }) : sb.from("nda_templates").select("version,texto").eq("activo", true).maybeSingle(),
+    privado ? sb.from("deal_documents").select("id,nombre,tipo").eq("deal_id", deal.id).order("created_at") : Promise.resolve({ data: [] }),
+    esDueno ? sb.rpc("solicitantes_nda", { p_deal: deal.id }) : Promise.resolve({ data: null }),
+    esDueno ? sb.rpc("vistas_deal", { p_deal: deal.id }) : Promise.resolve({ data: null }),
+  ]);
 
   const kpis: [string, React.ReactNode][] = [
     ["Precio", deal.precio != null ? <Money value={Number(deal.precio)} /> : "—"],
@@ -104,21 +117,26 @@ export default async function DealPage({ params }: { params: { id: string } }) {
         ? <Calculadora precio={Number(deal.precio)} noiAnual={Number(deal.noi_anual)} />
         : <p className="text-sm text-muted-foreground">La calculadora requiere precio y NOI anual.</p>}
 
-      {/* Nivel 2: solo aparece si RLS devolvió la fila */}
+      {/* Nivel 2: solo aparece si RLS devolvió la fila de deal_private */}
       {privado ? (
-        <section className="space-y-3 rounded-lg border-2 border-primary p-4">
+        <section className="space-y-4 rounded-lg border-2 border-primary p-4">
           <h2 className="text-xl font-bold">Información confidencial</h2>
           <p><strong>Dirección exacta:</strong> {privado.direccion_exacta}</p>
           <p className="whitespace-pre-line">{privado.descripcion_completa}</p>
-          <p className="text-sm text-muted-foreground">Data room y chat: Fase 4.</p>
+          <DataRoom dealId={deal.id} docs={docs ?? []} />
         </section>
       ) : (
-        <section className="space-y-2 rounded-lg border border-dashed border-border p-4">
-          <h2 className="text-xl font-bold">Información confidencial</h2>
-          <p className="text-sm">Dirección exacta, descripción completa, data room y chat se desbloquean con un NDA aprobado por el vendedor.</p>
-          <p className="text-sm text-muted-foreground">{user ? "Solicitud y firma de NDA: disponible en la Fase 4." : "Inicia sesión para solicitar acceso (NDA: Fase 4)."}</p>
+        <NdaPanel dealId={deal.id} plantilla={plantilla} estadoInicial={(miNda?.estado ?? null) as EstadoNda} logueado={!!user} volver={`/deal/${deal.id}`} />
+      )}
+
+      {user && !esDueno && miNda?.estado === "aprobado" && (
+        <section className="space-y-2 rounded-lg border border-border p-4">
+          <h2 className="text-xl font-bold">Chat con el vendedor</h2>
+          <Chat dealId={deal.id} threadUserId={user.id} userId={user.id} etiquetaOtro={seller?.nombre ?? "Vendedor"} />
         </section>
       )}
+
+      {esDueno && user && <PanelVendedor dealId={deal.id} ownerId={user.id} solicitantes={(rpcSolicitantes.data ?? []) as Solicitante[]} vistas={(rpcVistas.data ?? null) as Vistas | null} />}
 
       <p role="note" className="text-xs text-muted-foreground"><strong>Aviso:</strong> {AVISO_LEGAL}</p>
     </article>
