@@ -12,5 +12,7 @@ do $$ declare n int; begin
   assert (select count(*) from deals where tipo_operacion = 'busca_socio_capital' and (monto_capital_buscado is null or participacion_ofrecida_pct is null)) = 0, 'socio: capital y participación';
   assert (select count(*) from deals d join inegi_municipios m on m.estado_clave = d.estado_clave and m.clave = d.municipio_clave
           where m.nombre in ('Monterrey','San Pedro Garza García','Apodaca','General Escobedo','Santa Catarina','Saltillo','Ramos Arizpe')) = 30, 'municipios correctos según catálogo';
+  assert (select count(*) from deals where m2_ref is distinct from coalesce(m2_construccion, m2_terreno)) = 0, 'm2_ref = construcción o terreno';
+  assert (select count(*) from deals where m2_ref is null) = 0, 'm2_ref presente';
 end $$;
 \echo 'SEED: OK'

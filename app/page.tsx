@@ -1,33 +1,46 @@
 import { createClient } from "@/lib/supabase/server";
 import { DealCard, type DealResumen } from "@/components/deals/deal-card";
-import { SEGMENTOS } from "@/lib/catalogos";
+import { SEGMENTOS, TIPOS_OPERACION } from "@/lib/catalogos";
+import { cargarNombres } from "@/lib/search/nombres";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const sb = createClient();
-  const [{ data: deals }, { data: munis }, { data: estados }] = await Promise.all([
+  const [{ data: deals }, { data: estados }] = await Promise.all([
     sb.from("deals").select("id,titulo,segmento,tipo_operacion,estado_clave,municipio_clave,precio,cap_rate,m2_construccion,m2_terreno,monto_capital_buscado,es_ejemplo,deal_photos(path,orden)")
-      .eq("status", "publicado").order("published_at", { ascending: false }).limit(6),
-    sb.from("inegi_municipios").select("estado_clave,clave,nombre").in("estado_clave", ["19", "05"]),
-    sb.from("inegi_estados").select("clave,nombre"),
+      .in("status", ["publicado"]).order("published_at", { ascending: false, nullsFirst: false }).limit(6),
+    sb.from("inegi_estados").select("clave,nombre").order("nombre"),
   ]);
-  const muniNombre = (e: string, m: string) => munis?.find((x) => x.estado_clave === e && x.clave === m)?.nombre;
-  const estNombre = (e: string) => estados?.find((x) => x.clave === e)?.nombre;
-  const resumen: DealResumen[] = (deals ?? []).map((d: any) => ({
-    ...d, precio: d.precio != null ? Number(d.precio) : null, cap_rate: d.cap_rate != null ? Number(d.cap_rate) : null,
-    m2_construccion: d.m2_construccion != null ? Number(d.m2_construccion) : null, m2_terreno: d.m2_terreno != null ? Number(d.m2_terreno) : null,
-    monto_capital_buscado: d.monto_capital_buscado != null ? Number(d.monto_capital_buscado) : null,
-    municipio_nombre: muniNombre(d.estado_clave, d.municipio_clave), estado_nombre: estNombre(d.estado_clave),
-    foto: [...(d.deal_photos ?? [])].sort((a: any, b: any) => a.orden - b.orden)[0]?.path ?? null,
+  const filas = deals ?? [];
+  const nombres = await cargarNombres(sb, filas);
+  const num = (x: unknown) => (x == null ? null : Number(x));
+  const resumen: DealResumen[] = filas.map((d) => ({
+    id: d.id, titulo: d.titulo, segmento: d.segmento, tipo_operacion: d.tipo_operacion,
+    municipio_nombre: nombres.municipio(d.estado_clave, d.municipio_clave), estado_nombre: nombres.estado(d.estado_clave),
+    precio: num(d.precio), cap_rate: num(d.cap_rate), m2_construccion: num(d.m2_construccion), m2_terreno: num(d.m2_terreno),
+    monto_capital_buscado: num(d.monto_capital_buscado), es_ejemplo: d.es_ejemplo,
+    foto: [...(d.deal_photos ?? [])].sort((a, b) => a.orden - b.orden)[0]?.path ?? null,
   }));
+  const sel = "mt-1 w-full rounded-md border border-border p-2 text-sm";
 
   return (
     <div className="space-y-10">
-      <section>
+      <section className="space-y-4">
         <h1 className="text-3xl font-bold">Oportunidades de inversión inmobiliaria en México</h1>
-        <p className="mt-2 text-muted-foreground">Teasers públicos; dirección exacta y documentos tras un NDA aprobado.</p>
-        <p className="mt-2 text-sm text-muted-foreground">El buscador con filtros y mapa llega en la Fase 3.</p>
+        <p className="text-muted-foreground">Teasers públicos; dirección exacta y documentos tras un NDA aprobado.</p>
+        <form action="/buscar" method="get" className="grid gap-3 rounded-lg border border-border p-4 sm:grid-cols-4" aria-label="Buscador">
+          <label className="text-xs">Estado
+            <select name="estado" className={sel}><option value="">Todos</option>{(estados ?? []).map((e) => <option key={e.clave} value={e.clave}>{e.nombre}</option>)}</select>
+          </label>
+          <label className="text-xs">Segmento
+            <select name="segmento" className={sel}><option value="">Todos</option>{Object.entries(SEGMENTOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+          </label>
+          <label className="text-xs">Operación
+            <select name="operacion" className={sel}><option value="">Todas</option>{Object.entries(TIPOS_OPERACION).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+          </label>
+          <button className="self-end rounded-md bg-primary p-2 text-primary-foreground">Buscar</button>
+        </form>
       </section>
       <section aria-label="Segmentos" className="flex flex-wrap gap-2">
         {Object.entries(SEGMENTOS).map(([k, v]) => (

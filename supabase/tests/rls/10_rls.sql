@@ -210,4 +210,27 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2', 'authenticated');
 do $$ begin assert (select count(*) from deal_views) = 0, 'inversionista NO lee analítica'; end $$;
 select pg_temp.reset();
 
+-- ===== saved_searches: solo el propietario =====
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1', 'authenticated');
+insert into saved_searches (user_id, nombre, filtros, frecuencia)
+values (auth.uid(), 'Naves', '{"estado":"19","segmento":["industrial"]}', 'diaria');
+do $$ begin
+  begin
+    insert into saved_searches (user_id, nombre, filtros) values ('00000000-0000-0000-0000-0000000000b2', 'ajena', '{}');
+    raise exception 'DEBIO FALLAR: guardar búsqueda a nombre de otro';
+  exception when others then assert sqlerrm like '%row-level security%', sqlerrm; end;
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2', 'authenticated');
+do $$ begin assert (select count(*) from saved_searches) = 0, 'otro usuario NO ve búsquedas ajenas'; end $$;
+select pg_temp.reset();
+select pg_temp.as_user('', 'anon');
+do $$ begin
+  begin
+    insert into saved_searches (user_id, nombre, filtros) values (gen_random_uuid(), 'anon', '{}');
+    raise exception 'DEBIO FALLAR: anon guardando búsqueda';
+  exception when insufficient_privilege then null; when others then assert sqlerrm like '%row-level security%' or sqlerrm like '%permission denied%', sqlerrm; end;
+end $$;
+select pg_temp.reset();
+
 \echo 'RLS: TODAS LAS PRUEBAS PASARON'
