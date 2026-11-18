@@ -22,9 +22,16 @@ trap cleanup EXIT
 run "$PGBIN/initdb -D $DIR/data -A trust -U postgres" >/dev/null
 run "$PGBIN/pg_ctl -D $DIR/data -o '-p $PORT -k $DIR -c listen_addresses=' -w start" >/dev/null
 PSQL="$PGBIN/psql -h $DIR -p $PORT -U postgres -v ON_ERROR_STOP=1 -q"
-run "$PGBIN/createdb -h $DIR -p $PORT -U postgres dealmx_test"
+fresh_db() {  # fresh_db <nombre>: BD nueva con shim + migraciones
+  local db="$1"
+  run "$PGBIN/createdb -h $DIR -p $PORT -U postgres $db"
+  run "$PSQL -d $db -f $PWD/supabase/tests/rls/00_shim.sql" >/dev/null
+  for f in supabase/migrations/*.sql; do echo "→ $db: $f"; run "$PSQL -d $db -f $PWD/$f" >/dev/null; done
+}
 
-apply() { run "$PSQL -d dealmx_test -f $PWD/$1" >/dev/null; }
-apply supabase/tests/rls/00_shim.sql
-for f in supabase/migrations/*.sql; do echo "→ $f"; apply "$f"; done
+fresh_db dealmx_test
 run "$PSQL -d dealmx_test -f $PWD/supabase/tests/rls/10_rls.sql"
+
+fresh_db dealmx_seed
+run "$PSQL -d dealmx_seed -f $PWD/supabase/seed.sql" >/dev/null
+run "$PSQL -d dealmx_seed -f $PWD/supabase/tests/rls/20_seed.sql"
