@@ -10,6 +10,7 @@ import { DataRoom } from "@/components/deals/data-room";
 import { Chat } from "@/components/chat/chat";
 import { AccionesInversionista } from "@/components/dashboard/acciones-inversionista";
 import { esEtapa } from "@/lib/pipeline";
+import { puedeVerPrivado } from "@/lib/acceso";
 import { PanelAdminDeal, type NdaAdmin } from "@/components/admin/panel-admin-deal";
 import { AVISO_LEGAL } from "@/components/layout/legal-banner";
 import { REGIMENES, SEGMENTOS, TIPOS_OPERACION, fotoUrl } from "@/lib/catalogos";
@@ -42,12 +43,14 @@ export default async function DealPage({ params }: { params: { id: string } }) {
   const [{ data: miNda }, { data: plantilla }, { data: docs }, rpcSolicitantes, rpcVistas, { data: miFav }, { data: miPipe }] = await Promise.all([
     user && !esDueno ? sb.from("ndas").select("estado").eq("deal_id", deal.id).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     privado || !user || esDueno || esAdmin ? Promise.resolve({ data: null }) : sb.from("nda_templates").select("version,texto").eq("activo", true).maybeSingle(),
-    privado ? sb.from("deal_documents").select("id,nombre,tipo").eq("deal_id", deal.id).order("created_at") : Promise.resolve({ data: [] }),
+    // Sin depender de deal_private: RLS devuelve filas solo a dueño/admin/NDA aprobado (para el resto, lista vacía).
+    user ? sb.from("deal_documents").select("id,nombre,tipo").eq("deal_id", deal.id).order("created_at") : Promise.resolve({ data: [] }),
     esDueno || esAdmin ? sb.rpc("solicitantes_nda", { p_deal: deal.id }) : Promise.resolve({ data: null }),
     esDueno ? sb.rpc("vistas_deal", { p_deal: deal.id }) : Promise.resolve({ data: null }),
     user && !esDueno ? sb.from("favorites").select("deal_id").eq("deal_id", deal.id).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     user && !esDueno ? sb.from("pipeline_items").select("etapa").eq("deal_id", deal.id).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
+  const verPrivado = puedeVerPrivado({ esDueno, esAdmin, ndaEstado: miNda?.estado, tienePrivado: !!privado });
 
   const kpis: [string, React.ReactNode][] = [
     ["Precio", deal.precio != null ? <Money value={Number(deal.precio)} /> : "—"],
@@ -126,12 +129,18 @@ export default async function DealPage({ params }: { params: { id: string } }) {
         ? <Calculadora precio={Number(deal.precio)} noiAnual={Number(deal.noi_anual)} />
         : <p className="text-sm text-muted-foreground">La calculadora requiere precio y NOI anual.</p>}
 
-      {/* Nivel 2: solo aparece si RLS devolvió la fila de deal_private */}
-      {privado ? (
+      {/* Nivel 2: se muestra según la autorización (dueño, admin o NDA aprobado); los datos los entrega RLS */}
+      {verPrivado ? (
         <section className="space-y-4 rounded-lg border-2 border-primary p-4">
           <h2 className="text-xl font-bold">Información confidencial</h2>
-          <p><strong>Dirección exacta:</strong> {privado.direccion_exacta}</p>
-          <p className="whitespace-pre-line">{privado.descripcion_completa}</p>
+          {privado ? (
+            <>
+              <p><strong>Dirección exacta:</strong> {privado.direccion_exacta}</p>
+              <p className="whitespace-pre-line">{privado.descripcion_completa}</p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">El vendedor aún no ha capturado la dirección exacta ni la descripción completa.</p>
+          )}
           <DataRoom dealId={deal.id} docs={docs ?? []} />
         </section>
       ) : esAdmin ? null : (

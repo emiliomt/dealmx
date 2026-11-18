@@ -4,7 +4,7 @@ export interface DealParaModerar {
   precio: number | null; noi_anual: number | null; renta_mensual_actual: number | null; ocupacion_pct: number | null; tir_proyectada: number | null;
   zona_restringida: boolean; regimen_propiedad: string | null; descripcion_teaser: string;
 }
-export interface ContextoModeracion { fotos: number; documentos: number; vendedorVerificado: boolean }
+export interface ContextoModeracion { fotos: number; documentos: number; vendedorVerificado: boolean; datosPrivadosCompletos: boolean }
 export interface Senal { nivel: "alerta" | "aviso"; texto: string }
 
 /**
@@ -16,6 +16,7 @@ export function senalesModeracion(d: DealParaModerar, c: ContextoModeracion): Se
   const coh = evaluarCoherencia(d);
   coh.errores.forEach((texto) => out.push({ nivel: "alerta", texto }));
   coh.avisos.forEach((texto) => out.push({ nivel: "aviso", texto }));
+  if (!c.datosPrivadosCompletos) out.push({ nivel: "alerta", texto: "Faltan datos privados (dirección exacta, coordenadas o descripción completa): los inversionistas con NDA no verían nada." });
   if (c.fotos === 0) out.push({ nivel: "alerta", texto: "No tiene fotos." });
   if (c.documentos === 0) out.push({ nivel: "aviso", texto: "El data room está vacío." });
   if (!c.vendedorVerificado) out.push({ nivel: "aviso", texto: "El vendedor aún no está verificado." });

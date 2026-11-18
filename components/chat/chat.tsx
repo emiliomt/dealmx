@@ -22,8 +22,9 @@ export function Chat({ dealId, threadUserId, userId, etiquetaOtro }: { dealId: s
   useEffect(() => {
     let vivo = true;
     sb.from("messages").select("id,sender_id,body,created_at").eq("deal_id", dealId).eq("thread_user_id", threadUserId)
-      .order("created_at").limit(200)
-      .then(({ data, error }) => { if (!vivo) return; if (error) setError("No se pudieron cargar los mensajes"); else setMsgs(data ?? []); });
+      // Los 200 más RECIENTES (orden descendente) y luego se invierten para mostrarlos de más antiguo a más nuevo.
+      .order("created_at", { ascending: false }).limit(200)
+      .then(({ data, error }) => { if (!vivo) return; if (error) setError("No se pudieron cargar los mensajes"); else setMsgs([...(data ?? [])].reverse()); });
     const canal = sb.channel(`chat:${dealId}:${threadUserId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `deal_id=eq.${dealId}` }, (p) => {
         const m = p.new as Mensaje & { thread_user_id: string };

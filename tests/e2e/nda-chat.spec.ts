@@ -73,4 +73,25 @@ test.describe("NDA y chat (componentes con red simulada)", () => {
     await expect(page.getByRole("alert").filter({ hasText: "No se pudo enviar" })).toBeVisible();
     await expect(page.getByLabel("Mensaje")).toHaveValue("hola");
   });
+
+  test("chat: pide los 200 mensajes MÁS RECIENTES y los muestra en orden cronológico", async ({ page }) => {
+    let urlGet = "";
+    // La BD responde en orden descendente (el más nuevo primero), como al pedir order=created_at.desc.
+    const desc = [
+      { id: "m3", sender_id: "99999999-9999-4999-8999-999999999999", body: "TERCERO (más reciente)", created_at: "2026-11-18T12:00:00Z" },
+      { id: "m2", sender_id: "22222222-2222-4222-8222-222222222222", body: "SEGUNDO", created_at: "2026-11-18T11:00:00Z" },
+      { id: "m1", sender_id: "99999999-9999-4999-8999-999999999999", body: "PRIMERO (más antiguo)", created_at: "2026-11-18T10:00:00Z" },
+    ];
+    await page.route("**/rest/v1/messages*", (route) => {
+      if (route.request().method() === "GET") urlGet = decodeURIComponent(route.request().url());
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(desc) });
+    });
+    await page.goto("/e2e/nda");
+    const log = page.getByRole("log");
+    await expect(log).toContainText("TERCERO");
+    expect(urlGet).toContain("order=created_at.desc");
+    expect(urlGet).toContain("limit=200");
+    const textos = await log.locator("div.rounded-md >> div.whitespace-pre-wrap").allTextContents();
+    expect(textos).toEqual(["PRIMERO (más antiguo)", "SEGUNDO", "TERCERO (más reciente)"]);
+  });
 });
