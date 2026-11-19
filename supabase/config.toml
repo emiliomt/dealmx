@@ -1,0 +1,25 @@
+# Configuración mínima para Supabase CLI (supabase start). Los demás valores usan los defaults de la CLI.
+# NOTA: escrita a mano, no generada con `supabase init`; si la CLI se queja, ejecuta `supabase init` y conserva [db.seed].
+project_id = "dealmx"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+
+[db]
+port = 54322
+major_version = 15
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
