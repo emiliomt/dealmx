@@ -90,3 +90,31 @@ export function validarPaso(values: unknown, paso: number): Record<string, strin
   }
   return out;
 }
+
+export type ValoresForm = Record<string, string | boolean>;
+
+/**
+ * Deal (y sus datos privados) de la BD -> valores del formulario de edición. El wizard maneja TODO como texto:
+ * null/undefined -> "", y los numéricos ("10000000.00" o 10000000) -> "10000000".
+ */
+export function valoresDesdeDeal(deal: Record<string, unknown>, privado?: Record<string, unknown> | null): ValoresForm {
+  const txt = (x: unknown) => (x == null ? "" : String(x));
+  const num = (x: unknown) => {
+    if (x == null || x === "") return "";
+    const n = Number(x);
+    return Number.isFinite(n) ? String(n) : "";
+  };
+  return {
+    titulo: txt(deal.titulo), tipo_operacion: txt(deal.tipo_operacion), segmento: txt(deal.segmento),
+    estado_clave: txt(deal.estado_clave), municipio_clave: txt(deal.municipio_clave), colonia: txt(deal.colonia),
+    precio: num(deal.precio), m2_terreno: num(deal.m2_terreno), m2_construccion: num(deal.m2_construccion),
+    renta_mensual_actual: num(deal.renta_mensual_actual), noi_anual: num(deal.noi_anual), ocupacion_pct: num(deal.ocupacion_pct),
+    num_inquilinos: num(deal.num_inquilinos), plazo_promedio_contratos: num(deal.plazo_promedio_contratos),
+    monto_capital_buscado: num(deal.monto_capital_buscado), participacion_ofrecida_pct: num(deal.participacion_ofrecida_pct),
+    tir_proyectada: num(deal.tir_proyectada),
+    regimen_propiedad: txt(deal.regimen_propiedad), uso_suelo: txt(deal.uso_suelo), zona_restringida: !!deal.zona_restringida,
+    descripcion_teaser: txt(deal.descripcion_teaser),
+    direccion_exacta: txt(privado?.direccion_exacta), lat: num(privado?.lat), lng: num(privado?.lng),
+    descripcion_completa: txt(privado?.descripcion_completa),
+  };
+}

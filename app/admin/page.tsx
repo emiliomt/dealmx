@@ -30,7 +30,7 @@ export default async function Admin({ searchParams }: { searchParams: { verif?: 
   const filtro = (FILTROS as string[]).includes(searchParams.verif ?? "") ? (searchParams.verif as EstadoVerif) : "pendiente";
   const [resumen, cola, usuarios, auditoria] = await Promise.all([
     sb.rpc("admin_resumen"),
-    sb.from("deals").select("id,titulo,segmento,tipo_operacion,estado_clave,municipio_clave,precio,noi_anual,renta_mensual_actual,ocupacion_pct,tir_proyectada,cap_rate,zona_restringida,regimen_propiedad,descripcion_teaser,es_ejemplo,updated_at,motivo_rechazo,vendedor:profiles!seller_id(nombre,empresa,estado_verificacion),deal_photos(id),deal_documents(id),deal_private(direccion_exacta,descripcion_completa,lat,lng)")
+    sb.from("deals").select("id,titulo,segmento,tipo_operacion,estado_clave,municipio_clave,precio,noi_anual,renta_mensual_actual,ocupacion_pct,tir_proyectada,cap_rate,zona_restringida,regimen_propiedad,descripcion_teaser,es_ejemplo,updated_at,published_at,motivo_rechazo,vendedor:profiles!seller_id(nombre,empresa,estado_verificacion),deal_photos(id),deal_documents(id),deal_private(direccion_exacta,descripcion_completa,lat,lng)")
       .eq("status", "en_revision").order("updated_at", { ascending: true }).limit(100),
     sb.from("profiles").select("id,rol,nombre,empresa,telefono,registro_asesor,estado_registro,estado_verificacion,nota_verificacion,created_at")
       .eq("estado_verificacion", filtro).neq("rol", "admin").order("created_at", { ascending: false }).limit(100),
@@ -48,7 +48,7 @@ export default async function Admin({ searchParams }: { searchParams: { verif?: 
     senales: senalesModeracion(
       { precio: num(d.precio), noi_anual: num(d.noi_anual), renta_mensual_actual: num(d.renta_mensual_actual), ocupacion_pct: num(d.ocupacion_pct), tir_proyectada: num(d.tir_proyectada),
         zona_restringida: d.zona_restringida, regimen_propiedad: d.regimen_propiedad, descripcion_teaser: d.descripcion_teaser ?? "" },
-      { fotos: d.deal_photos?.length ?? 0, documentos: d.deal_documents?.length ?? 0, vendedorVerificado: d.vendedor?.estado_verificacion === "verificado", datosPrivadosCompletos: privadosCompletos(d.deal_private), sinCoordenadas: sinCoordenadas(d.deal_private) },
+      { fotos: d.deal_photos?.length ?? 0, documentos: d.deal_documents?.length ?? 0, vendedorVerificado: d.vendedor?.estado_verificacion === "verificado", datosPrivadosCompletos: privadosCompletos(d.deal_private), sinCoordenadas: sinCoordenadas(d.deal_private), editadoTrasPublicar: !!d.published_at },
     ),
   }));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -59,6 +59,7 @@ export function MisDeals({ inicial }: { inicial: MiDeal[] }) {
                 {d.motivo_rechazo && d.status === "borrador" && <div className="text-xs text-destructive">Moderación: {d.motivo_rechazo}</div>}
               </div>
               <div className="flex flex-wrap gap-2">
+                {d.status !== "cerrado" && <a href={`/deal/${d.id}/editar`} className="rounded-md border border-border px-2 py-1 text-xs">Editar</a>}
                 {(ACCIONES[d.status] ?? []).map((x) => <button key={x.a} disabled={busy === d.id} onClick={() => cambiar(d, x.a)} className="rounded-md border border-border px-2 py-1 text-xs disabled:opacity-50">{x.label}</button>)}
                 {(d.status === "borrador" || d.status === "en_revision") && <button disabled={busy === d.id} onClick={() => eliminar(d)} className="rounded-md border border-border px-2 py-1 text-xs text-destructive disabled:opacity-50">Eliminar</button>}
               </div>

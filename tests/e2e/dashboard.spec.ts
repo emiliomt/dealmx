@@ -90,12 +90,14 @@ test.describe("dashboards (componentes con red simulada)", () => {
 
   test("vendedor: marcar en negociación y cerrar piden confirmación y envían el estado", async ({ page }) => {
     const reqs = await abrir(page);
+    await expect(page.getByRole("link", { name: "Editar" })).toHaveAttribute("href", "/deal/d1/editar");
     await page.getByRole("button", { name: "Marcar en negociación" }).click();
     await expect(page.getByText("En negociación")).toBeVisible();
     await page.getByRole("button", { name: "Cerrar" }).click();
     const cuerpos = reqs.filter((r) => r.metodo === "PATCH" && r.url.includes("/deals")).map((r) => r.cuerpo);
     expect(cuerpos).toEqual([{ status: "en_negociacion" }, { status: "cerrado" }]);
     await expect(page.getByRole("button", { name: "Cerrar" })).toHaveCount(0); // cerrado: sin más acciones
+    await expect(page.getByRole("link", { name: "Editar" })).toHaveCount(0);   // y un cerrado ya no se edita
   });
 
   test("ficha: favoritos y pipeline envían upsert con el usuario y deal correctos", async ({ page }) => {

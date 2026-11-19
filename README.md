@@ -75,6 +75,10 @@ Qué demuestra cada una (y qué **no**):
   `deal_private`, legible solo por el dueño, un admin o un usuario con NDA `aprobado` (`can_see_private()`). Las coordenadas públicas
   (`lat_aprox/lng_aprox`, ~1–2 km) las calcula un trigger en la BD; el cliente nunca las envía.
 - **Campos calculados** `cap_rate` y `precio_m2` son columnas generadas. `m2_ref` (construcción, o terreno) sirve al filtro de m².
+- **Edición de deals y re-moderación** (`0009_edicion_deals.sql`, `/deal/[id]/editar`, reutiliza el wizard con los datos cargados; incluye fotos; los documentos se gestionan en el panel). La regla vive en la BD, no en la pantalla:
+  si un **vendedor** cambia un campo material (precio, cifras, descripciones, ubicación, datos privados…) de un deal `publicado` o `en_negociacion`, este **vuelve solo a `en_revision`** y un admin debe
+  aprobarlo de nuevo (mientras tanto no es público ni se abre su ficha, aunque quien ya tiene NDA conserva su acceso a los datos). Un deal `cerrado` no se edita; un borrador o en revisión se edita libremente; un admin edita sin reabrir la revisión.
+  `published_at` conserva la **primera** publicación (re-aprobar no reenvía alertas por correo). Agregar o quitar fotos no reabre la revisión.
 - **Máquinas de estado en la BD**, no en la interfaz: deals (`guard_deal_status`), NDAs (`guard_nda_transition`), roles/verificación (`guard_profile_privileged_cols`).
 - **Storage:** `deal-photos` público; `data-room` privado con política `has_approved_nda`/dueño/admin. Descarga vía URL firmada de 60 s tras validar con RLS.
 - **Funciones SQL `SECURITY DEFINER`** acotadas por `auth.uid()` para datos agregados (estadísticas, solicitudes, hilos, vistas) sin exponer teléfono ni correo.
@@ -85,7 +89,7 @@ Qué demuestra cada una (y qué **no**):
 - **Visitante / inversionista:** `/` (buscador, destacados, segmentos) · `/buscar` (lista + mapa, filtros en la URL, guardar búsqueda) · `/deal/[id]`
   (teaser, KPIs, calculadora con supuestos editables, firma de NDA; tras la aprobación: datos privados, data room y chat) · `/dashboard/inversionista`
   (pipeline kanban con arrastrar y soltar, NDAs, búsquedas guardadas, favoritos).
-- **Vendedor:** `/publicar` (wizard de 6 pasos con validación NOI/precio/renta; la latitud y longitud son **opcionales**: sin ellas el deal se publica y aparece en la lista, pero no en el mapa) · `/dashboard/vendedor` (solicitudes de NDA, mis deals con vistas,
+- **Vendedor:** `/publicar` (wizard de 6 pasos con validación NOI/precio/renta; la latitud y longitud son **opcionales**: sin ellas el deal se publica y aparece en la lista, pero no en el mapa) · `/dashboard/vendedor` (solicitudes de NDA, mis deals con vistas, **botón Editar**,
   estado y data room, mensajes).
 - **Admin:** `/admin` (cola de moderación con señales automáticas, verificación de usuarios, bitácora). El acceso lo decide la BD
   (`moderar_deal`, `verificar_usuario`, `reabrir_nda`); la página devuelve 404 a quien no sea admin. Cada acción se registra en `admin_audit`.
@@ -109,7 +113,7 @@ Qué demuestra cada una (y qué **no**):
    - Si falla la conexión (`no route to host`): la conexión directa de Supabase es solo IPv6. Usa el **Session pooler** (Project Settings → Database →
      Connection string → *Session pooler*): `npx supabase db push --db-url "postgresql://postgres.<ref>:<CONTRASEÑA>@aws-0-<región>.pooler.supabase.com:5432/postgres"`.
      La contraseña es la de la base de datos (no las llaves anon/service_role) y se restablece en Project Settings → Database.
-   - Sin CLI: en el SQL Editor pega y ejecuta **cada archivo por separado, en orden `0001`→`0008`** (así, si uno falla, sabes cuál).
+   - Sin CLI: en el SQL Editor pega y ejecuta **cada archivo por separado, en orden `0001`→`0009`** (así, si uno falla, sabes cuál).
    - Si una migración falla, pásame/copia el mensaje exacto. La CLI normalmente aplica cada archivo en una transacción (no lo he podido comprobar); si dudas del estado en que
      quedó, ejecuta `supabase/verify.sql` antes de reintentar: te dice qué piezas existen y cuáles faltan. Las migraciones no están escritas para ejecutarse dos veces.
    - **Verifica**: pega `supabase/verify.sql` en el SQL Editor (solo lectura). Debe devolver 13 comprobaciones y un `RESUMEN` en `OK`: catálogos INEGI,
@@ -168,7 +172,7 @@ El cron `GET /api/cron/alerts` cruza los deals publicados con `saved_searches` y
 app/            páginas y rutas (api/nda, api/deals, api/cron, api/alertas), /admin, /dashboard, /deal, /buscar, /publicar, e2e (arnés de pruebas)
 components/     UI por dominio (deals, calculator, map, search, nda, chat, dashboard, admin, wizard)
 lib/            finance/, search/, alertas/, email/, schemas/ (Zod), supabase/, format, nda, pipeline, moderacion
-supabase/       migrations/0001–0008, seed.sql, config.toml, tests/rls/ (shim + pruebas SQL)
+supabase/       migrations/0001–0009, seed.sql, config.toml, tests/rls/ (shim + pruebas SQL)
 scripts/        test-rls.sh, gen-seed.ts
 tests/          unit/ (Vitest) y e2e/ (Playwright)
 ```
@@ -188,5 +192,5 @@ en un Postgres 16 real, rutas de API (firma, cron, bajas) con HTTP real o client
 - **Textos legales** (aviso legal, aviso de privacidad LFPDPPP, texto del NDA) son **placeholders** sin revisión de un abogado.
 - Mapa: los mosaicos de OpenStreetMap por defecto son solo para desarrollo.
 
-**Fuera del alcance del MVP:** editar un deal ya creado (solo cambia de estado y gestiona documentos), indicador de mensajes no leídos, correos al vendedor por NDA o
+**Fuera del alcance del MVP:** historial o diferencias de cada edición de un deal, indicador de mensajes no leídos, correos al vendedor por NDA o
 mensaje nuevo ni al moderar, revocar un NDA ya aprobado, geocodificación (las coordenadas exactas se capturan a mano), paginación del cron más allá de 500 búsquedas.

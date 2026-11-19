@@ -81,6 +81,7 @@ export default async function DealPage({ params }: { params: { id: string } }) {
           {deal.status !== "publicado" && <span className="rounded bg-muted px-2 py-0.5">Estatus: {deal.status}</span>}
         </div>
         <h1 className="text-3xl font-bold">{deal.titulo}</h1>
+        {(esDueno || esAdmin) && deal.status !== "cerrado" && <a href={`/deal/${deal.id}/editar`} className="inline-block rounded-md border border-border px-3 py-1 text-sm">Editar este deal</a>}
         <p className="text-muted-foreground">
           {[deal.colonia, muni?.nombre, estado?.nombre].filter(Boolean).join(", ")} · ubicación aproximada
         </p>

@@ -654,4 +654,105 @@ select public.record_deal_view('11111111-1111-1111-1111-111111111111');
 select pg_temp.reset();
 do $$ begin assert (select count(*) from deal_views)::text = current_setting('dealmx.vistas_antes'), 'las vistas de un admin no cuentan'; end $$;
 
+-- ===== Fase 8: edición de deals y re-moderación =====
+insert into deals (id, seller_id, titulo, tipo_operacion, segmento, estado_clave, municipio_clave, precio, noi_anual, status) values
+ ('55555555-5555-5555-5555-555555555555','00000000-0000-0000-0000-0000000000a1','Deal publicado editable','venta','mixto','19','039', 9000000, 700000, 'publicado'),
+ ('66666666-6666-6666-6666-666666666666','00000000-0000-0000-0000-0000000000a1','Borrador editable','venta','mixto','19','039', 2000000, 100000, 'borrador'),
+ ('77777777-7777-7777-7777-777777777777','00000000-0000-0000-0000-0000000000a1','Deal cerrado','venta','mixto','19','039', 3000000, 200000, 'cerrado'),
+ ('88888888-8888-8888-8888-888888888888','00000000-0000-0000-0000-0000000000a1','Deal publicado, retiro voluntario','venta','mixto','19','039', 4000000, 300000, 'publicado');
+insert into deal_private (deal_id, direccion_exacta, lat, lng, descripcion_completa) values
+ ('55555555-5555-5555-5555-555555555555', 'Calle Original 1', 25.70, -100.30, 'Descripción original');
+select set_config('dealmx.t0', (select published_at::text from deals where id = '55555555-5555-5555-5555-555555555555'), false);
+do $$ begin assert current_setting('dealmx.t0') is not null and current_setting('dealmx.t0') <> '', 'el deal publicado tiene published_at'; end $$;
+
+-- El dueño edita un campo material de un deal PUBLICADO -> vuelve a revisión; published_at (primera publicación) no cambia
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+do $$ begin
+  update deals set precio = 5000000 where id = '55555555-5555-5555-5555-555555555555';
+  assert (select status from deals where id = '55555555-5555-5555-5555-555555555555') = 'en_revision', 'editar el precio de un publicado -> en_revision';
+  assert (select precio from deals where id = '55555555-5555-5555-5555-555555555555') = 5000000, 'el cambio sí se guardó';
+  assert (select published_at::text from deals where id = '55555555-5555-5555-5555-555555555555') = current_setting('dealmx.t0'), 'published_at no cambia al editar';
+  begin
+    update deals set status = 'publicado' where id = '55555555-5555-5555-5555-555555555555';
+    raise exception 'DEBIO FALLAR: el vendedor no se auto-aprueba';
+  exception when others then assert sqlerrm like '%Transición%', sqlerrm; end;
+end $$;
+select pg_temp.reset();
+
+-- Datos privados: un UPDATE sin cambios NO reabre revisión; uno con cambios SÍ
+update deals set status = 'publicado' where id = '55555555-5555-5555-5555-555555555555';  -- (superusuario) restaura
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+do $$ begin
+  update deal_private set direccion_exacta = 'Calle Original 1', lat = 25.70, lng = -100.30, descripcion_completa = 'Descripción original'
+    where deal_id = '55555555-5555-5555-5555-555555555555';
+  assert (select status from deals where id = '55555555-5555-5555-5555-555555555555') = 'publicado', 'guardar datos privados SIN cambios no reabre la revisión';
+  update deal_private set descripcion_completa = 'Descripción nueva' where deal_id = '55555555-5555-5555-5555-555555555555';
+  assert (select status from deals where id = '55555555-5555-5555-5555-555555555555') = 'en_revision', 'cambiar datos privados de un publicado -> en_revision';
+end $$;
+select pg_temp.reset();
+
+-- No se puede falsear la ubicación pública de un deal publicado
+update deals set status = 'publicado' where id = '55555555-5555-5555-5555-555555555555';
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+do $$ begin
+  update deals set lat_aprox = 19.4, lng_aprox = -99.1 where id = '55555555-5555-5555-5555-555555555555';
+  assert (select status from deals where id = '55555555-5555-5555-5555-555555555555') = 'en_revision', 'cambiar la ubicación pública de un publicado -> en_revision';
+end $$;
+select pg_temp.reset();
+
+-- Borrador: se edita libremente y sigue borrador. Cerrado: congelado.
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+do $$ begin
+  update deals set precio = 2500000, titulo = 'Borrador editado' where id = '66666666-6666-6666-6666-666666666666';
+  assert (select status from deals where id = '66666666-6666-6666-6666-666666666666') = 'borrador', 'editar un borrador lo deja en borrador';
+  assert (select titulo from deals where id = '66666666-6666-6666-6666-666666666666') = 'Borrador editado', 'el borrador se editó';
+  begin
+    update deals set precio = 3500000 where id = '77777777-7777-7777-7777-777777777777';
+    raise exception 'DEBIO FALLAR: editar un cerrado';
+  exception when others then assert sqlerrm like '%cerrado no se edita%', sqlerrm; end;
+  begin
+    update deals set status = 'publicado' where id = '77777777-7777-7777-7777-777777777777';
+    raise exception 'DEBIO FALLAR: reabrir un cerrado';
+  exception when others then assert sqlerrm like '%Transición%', sqlerrm; end;
+end $$;
+select pg_temp.reset();
+
+-- El dueño puede retirar voluntariamente un publicado a revisión (no volver a publicarlo)
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+do $$ begin
+  update deals set status = 'en_revision' where id = '88888888-8888-8888-8888-888888888888';
+  assert (select status from deals where id = '88888888-8888-8888-8888-888888888888') = 'en_revision', 'retiro voluntario a revisión';
+  begin
+    update deals set status = 'publicado' where id = '88888888-8888-8888-8888-888888888888';
+    raise exception 'DEBIO FALLAR';
+  exception when others then assert sqlerrm like '%Transición%', sqlerrm; end;
+end $$;
+select pg_temp.reset();
+
+-- Otro vendedor no edita deals ajenos; el admin edita sin que cambie el estado; al re-aprobar se conserva published_at
+update deals set status = 'publicado' where id = '55555555-5555-5555-5555-555555555555';
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a2', 'authenticated');
+do $$ declare n int; begin
+  update deals set precio = 1 where id = '55555555-5555-5555-5555-555555555555';
+  get diagnostics n = row_count;
+  assert n = 0, 'otro vendedor no puede editar deals ajenos';
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1', 'authenticated');
+do $$ begin
+  update deals set precio = 6000000 where id = '55555555-5555-5555-5555-555555555555';
+  assert (select status from deals where id = '55555555-5555-5555-5555-555555555555') = 'publicado', 'el admin edita sin reabrir la revisión';
+end $$;
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1', 'authenticated');
+update deals set titulo = 'Editado por el dueño' where id = '55555555-5555-5555-5555-555555555555';
+select pg_temp.reset();
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1', 'authenticated');
+do $$ begin
+  assert public.moderar_deal('55555555-5555-5555-5555-555555555555', 'aprobar') = 'publicado', 're-aprobar';
+  assert (select published_at::text from deals where id = '55555555-5555-5555-5555-555555555555') = current_setting('dealmx.t0'),
+    'al re-aprobar se conserva la primera fecha de publicación (no se reenvían alertas)';
+end $$;
+select pg_temp.reset();
+
 \echo 'RLS: TODAS LAS PRUEBAS PASARON'

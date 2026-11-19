@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dealFormSchema, validarPaso } from "@/lib/schemas/deal";
+import { dealFormSchema, validarPaso, valoresDesdeDeal } from "@/lib/schemas/deal";
 
 const ok = {
   titulo: "Nave industrial de prueba", tipo_operacion: "venta", segmento: "industrial",
@@ -61,5 +61,34 @@ describe("dealFormSchema", () => {
   });
   it("requiere m² de terreno o construcción", () => {
     expect(dealFormSchema.safeParse({ ...ok, m2_construccion: "", m2_terreno: "" }).success).toBe(false);
+  });
+});
+
+describe("valoresDesdeDeal (deal de la BD -> valores del formulario de edición)", () => {
+  const deal = {
+    titulo: "Nave en Apodaca", tipo_operacion: "venta", segmento: "industrial", estado_clave: "19", municipio_clave: "006", colonia: null,
+    precio: "10000000.00", m2_terreno: null, m2_construccion: 2000, renta_mensual_actual: 100000, noi_anual: "900000.00",
+    ocupacion_pct: "95.00", num_inquilinos: 2, plazo_promedio_contratos: "3.0", regimen_propiedad: "escritura", uso_suelo: null,
+    zona_restringida: false, monto_capital_buscado: null, participacion_ofrecida_pct: null, tir_proyectada: null,
+    descripcion_teaser: "Teaser público de la nave industrial con rentas vigentes.",
+  };
+  const privado = { direccion_exacta: "Calle Ejemplo 123", lat: 25.7818, lng: -100.1883, descripcion_completa: "Descripción completa y confidencial de la nave industrial." };
+
+  it("null/undefined -> cadena vacía; números (o numéricos como texto) -> cadena sin ceros sobrantes", () => {
+    const v = valoresDesdeDeal(deal, privado);
+    expect(v.colonia).toBe(""); expect(v.m2_terreno).toBe(""); expect(v.uso_suelo).toBe(""); expect(v.tir_proyectada).toBe("");
+    expect(v.precio).toBe("10000000"); expect(v.noi_anual).toBe("900000"); expect(v.ocupacion_pct).toBe("95");
+    expect(v.m2_construccion).toBe("2000"); expect(v.plazo_promedio_contratos).toBe("3"); expect(v.num_inquilinos).toBe("2");
+  });
+  it("conserva textos y el booleano zona_restringida", () => {
+    const v = valoresDesdeDeal({ ...deal, zona_restringida: true }, privado);
+    expect(v).toMatchObject({ titulo: "Nave en Apodaca", tipo_operacion: "venta", segmento: "industrial", estado_clave: "19", municipio_clave: "006", regimen_propiedad: "escritura", zona_restringida: true, descripcion_teaser: "Teaser público de la nave industrial con rentas vigentes." });
+  });
+  it("incluye los datos privados; sin deal_private quedan vacíos", () => {
+    expect(valoresDesdeDeal(deal, privado)).toMatchObject({ direccion_exacta: "Calle Ejemplo 123", lat: "25.7818", lng: "-100.1883", descripcion_completa: "Descripción completa y confidencial de la nave industrial." });
+    expect(valoresDesdeDeal(deal, null)).toMatchObject({ direccion_exacta: "", lat: "", lng: "", descripcion_completa: "" });
+  });
+  it("el resultado pasa la validación completa (ida y vuelta con el esquema)", () => {
+    expect(dealFormSchema.safeParse(valoresDesdeDeal(deal, privado)).success).toBe(true);
   });
 });
