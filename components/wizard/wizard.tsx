@@ -214,8 +214,8 @@ export function Wizard({ userId, estados }: { userId: string; estados: { clave: 
         </fieldset>
         <fieldset className="space-y-3 rounded-md border border-border bg-muted p-3"><legend className="px-1 text-sm font-semibold">Privado (solo con NDA aprobado)</legend>
           {campo("direccion_exacta", "Dirección exacta")}
-          <div className="grid grid-cols-2 gap-3">{campo("lat", "Latitud", { type: "number", step: "any" })}{campo("lng", "Longitud", { type: "number", step: "any" })}</div>
-          <p className="text-xs text-muted-foreground">En el sitio público solo se muestra una ubicación aproximada (redondeada ~1–2 km, calculada en el servidor).</p>
+          <div className="grid grid-cols-2 gap-3">{campo("lat", "Latitud (opcional)", { type: "number", step: "any" })}{campo("lng", "Longitud (opcional)", { type: "number", step: "any" })}</div>
+          <p className="text-xs text-muted-foreground">Las coordenadas son opcionales: sin ellas el deal se publica y aparece en la lista, pero no en el mapa. Si las capturas, en el sitio público solo se muestra una ubicación aproximada (redondeada ~1–2 km, calculada en el servidor).</p>
           <label className="block text-sm">Descripción completa
             <textarea rows={6} className={input} value={String(v.descripcion_completa ?? "")} onChange={(e) => set("descripcion_completa", e.target.value)} />
             {errs.descripcion_completa && <span role="alert" className="text-destructive">{errs.descripcion_completa}</span>}

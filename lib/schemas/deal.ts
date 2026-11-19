@@ -8,6 +8,8 @@ const num = (min = 0, max?: number) =>
     (v) => (v === "" || v === null || v === undefined || (typeof v === "number" && Number.isNaN(v)) ? undefined : Number(v)),
     (max === undefined ? z.number().min(min) : z.number().min(min).max(max)).optional(),
   );
+/** "" / null / undefined -> undefined (campo no capturado); si no, número (NaN si no es numérico: lo rechaza z.number). */
+const vacioAUndefined = (v: unknown) => (v === "" || v === null || v === undefined ? undefined : Number(v));
 const texto = z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.string().trim().optional());
 
 export const dealFormSchema = z
@@ -39,8 +41,9 @@ export const dealFormSchema = z
     descripcion_teaser: z.string().trim().min(30, "Mínimo 30 caracteres").max(1500),
     descripcion_completa: z.string().trim().min(30, "Mínimo 30 caracteres").max(10000),
     direccion_exacta: z.string().trim().min(5, "Captura la dirección"),
-    lat: z.preprocess((v) => (v === "" ? undefined : Number(v)), z.number({ invalid_type_error: "Latitud inválida", required_error: "Latitud requerida" }).min(14, "Fuera de México").max(33, "Fuera de México")),
-    lng: z.preprocess((v) => (v === "" ? undefined : Number(v)), z.number({ invalid_type_error: "Longitud inválida", required_error: "Longitud requerida" }).min(-119, "Fuera de México").max(-86, "Fuera de México")),
+    // Coordenadas OPCIONALES (sin ellas el deal se publica, pero no sale en el mapa). Si se capturan, deben ser las dos y estar en México.
+    lat: z.preprocess(vacioAUndefined, z.number({ invalid_type_error: "Latitud inválida" }).min(14, "Fuera de México").max(33, "Fuera de México").optional()),
+    lng: z.preprocess(vacioAUndefined, z.number({ invalid_type_error: "Longitud inválida" }).min(-119, "Fuera de México").max(-86, "Fuera de México").optional()),
   })
   .superRefine((d, ctx) => {
     const socio = d.tipo_operacion === "busca_socio_capital";
@@ -51,6 +54,9 @@ export const dealFormSchema = z
     }
     if (d.m2_terreno === undefined && d.m2_construccion === undefined) {
       ctx.addIssue({ code: "custom", path: ["m2_terreno"], message: "Captura m² de terreno o de construcción" });
+    }
+    if ((d.lat === undefined) !== (d.lng === undefined)) {
+      ctx.addIssue({ code: "custom", path: [d.lat === undefined ? "lat" : "lng"], message: "Captura latitud y longitud, o deja ambas vacías" });
     }
     const c = evaluarCoherencia(d);
     c.errores.forEach((message) => ctx.addIssue({ code: "custom", path: ["noi_anual"], message }));

@@ -36,6 +36,21 @@ describe("dealFormSchema", () => {
   it("coordenadas fuera de México", () => {
     expect(dealFormSchema.safeParse({ ...ok, lat: "40", lng: "-3" }).success).toBe(false);
   });
+  it("latitud y longitud son OPCIONALES: vacías o ausentes es válido", () => {
+    expect(dealFormSchema.safeParse({ ...ok, lat: "", lng: "" }).success).toBe(true);
+    const { lat: _lat, lng: _lng, ...sinCoordenadas } = ok;
+    expect(dealFormSchema.safeParse(sinCoordenadas).success).toBe(true);
+    expect(validarPaso({ ...ok, lat: "", lng: "" }, 4)).toEqual({});
+  });
+  it("o se capturan las dos coordenadas o ninguna", () => {
+    expect(dealFormSchema.safeParse({ ...ok, lat: "25.78", lng: "" }).success).toBe(false);
+    expect(dealFormSchema.safeParse({ ...ok, lat: "", lng: "-100.19" }).success).toBe(false);
+    const e = validarPaso({ ...ok, lat: "25.78", lng: "" }, 4);
+    expect(Object.values(e).join()).toMatch(/ambas vacías/);
+  });
+  it("si se capturan, valores no numéricos siguen siendo error", () => {
+    expect(dealFormSchema.safeParse({ ...ok, lat: "abc", lng: "-100.19" }).success).toBe(false);
+  });
   it("el teaser no puede filtrar la dirección exacta", () => {
     const r = dealFormSchema.safeParse({ ...ok, descripcion_teaser: "Ubicada en Calle Ejemplo 123, Apodaca, excelente acceso a la carretera." });
     expect(r.success).toBe(false);

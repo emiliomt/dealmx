@@ -11,7 +11,11 @@ const num = (x: unknown) => (x == null ? null : Number(x));
 /** `deal_private` llega como objeto (relación 1:1) o null; se tolera también un arreglo. */
 function privadosCompletos(p: unknown): boolean {
   const f = (Array.isArray(p) ? p[0] : p) as { direccion_exacta?: string | null; descripcion_completa?: string | null; lat?: unknown; lng?: unknown } | null | undefined;
-  return !!f && !!f.direccion_exacta?.trim() && !!f.descripcion_completa?.trim() && f.lat != null && f.lng != null;
+  return !!f && !!f.direccion_exacta?.trim() && !!f.descripcion_completa?.trim();
+}
+function sinCoordenadas(p: unknown): boolean {
+  const f = (Array.isArray(p) ? p[0] : p) as { lat?: unknown; lng?: unknown } | null | undefined;
+  return !f || f.lat == null || f.lng == null;
 }
 const FILTROS: EstadoVerif[] = ["pendiente", "verificado", "rechazado"];
 const ETIQ_ACCION: Record<string, string> = { aprobar: "aprobó", rechazar: "rechazó", despublicar: "despublicó", reabrir: "reabrió el NDA de", verificado: "verificó a", rechazado: "rechazó la verificación de", pendiente: "regresó a pendiente a" };
@@ -44,7 +48,7 @@ export default async function Admin({ searchParams }: { searchParams: { verif?: 
     senales: senalesModeracion(
       { precio: num(d.precio), noi_anual: num(d.noi_anual), renta_mensual_actual: num(d.renta_mensual_actual), ocupacion_pct: num(d.ocupacion_pct), tir_proyectada: num(d.tir_proyectada),
         zona_restringida: d.zona_restringida, regimen_propiedad: d.regimen_propiedad, descripcion_teaser: d.descripcion_teaser ?? "" },
-      { fotos: d.deal_photos?.length ?? 0, documentos: d.deal_documents?.length ?? 0, vendedorVerificado: d.vendedor?.estado_verificacion === "verificado", datosPrivadosCompletos: privadosCompletos(d.deal_private) },
+      { fotos: d.deal_photos?.length ?? 0, documentos: d.deal_documents?.length ?? 0, vendedorVerificado: d.vendedor?.estado_verificacion === "verificado", datosPrivadosCompletos: privadosCompletos(d.deal_private), sinCoordenadas: sinCoordenadas(d.deal_private) },
     ),
   }));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

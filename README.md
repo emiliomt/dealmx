@@ -85,7 +85,7 @@ Qué demuestra cada una (y qué **no**):
 - **Visitante / inversionista:** `/` (buscador, destacados, segmentos) · `/buscar` (lista + mapa, filtros en la URL, guardar búsqueda) · `/deal/[id]`
   (teaser, KPIs, calculadora con supuestos editables, firma de NDA; tras la aprobación: datos privados, data room y chat) · `/dashboard/inversionista`
   (pipeline kanban con arrastrar y soltar, NDAs, búsquedas guardadas, favoritos).
-- **Vendedor:** `/publicar` (wizard de 6 pasos con validación NOI/precio/renta) · `/dashboard/vendedor` (solicitudes de NDA, mis deals con vistas,
+- **Vendedor:** `/publicar` (wizard de 6 pasos con validación NOI/precio/renta; la latitud y longitud son **opcionales**: sin ellas el deal se publica y aparece en la lista, pero no en el mapa) · `/dashboard/vendedor` (solicitudes de NDA, mis deals con vistas,
   estado y data room, mensajes).
 - **Admin:** `/admin` (cola de moderación con señales automáticas, verificación de usuarios, bitácora). El acceso lo decide la BD
   (`moderar_deal`, `verificar_usuario`, `reabrir_nda`); la página devuelve 404 a quien no sea admin. Cada acción se registra en `admin_audit`.

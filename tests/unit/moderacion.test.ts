@@ -5,13 +5,13 @@ const sano: DealParaModerar = {
   precio: 10_000_000, noi_anual: 900_000, renta_mensual_actual: 100_000, ocupacion_pct: 95, tir_proyectada: null,
   zona_restringida: false, regimen_propiedad: "escritura", descripcion_teaser: "x".repeat(120),
 };
-const ctxOk = { fotos: 3, documentos: 2, vendedorVerificado: true, datosPrivadosCompletos: true };
+const ctxOk = { fotos: 3, documentos: 2, vendedorVerificado: true, datosPrivadosCompletos: true, sinCoordenadas: false };
 const textos = (s: ReturnType<typeof senalesModeracion>) => s.map((x) => x.texto);
 
 describe("senalesModeracion", () => {
   it("un deal completo y coherente no genera señales", () => expect(senalesModeracion(sano, ctxOk)).toEqual([]));
   it("sin fotos es alerta; data room vacío y vendedor sin verificar son avisos", () => {
-    const s = senalesModeracion(sano, { fotos: 0, documentos: 0, vendedorVerificado: false, datosPrivadosCompletos: true });
+    const s = senalesModeracion(sano, { fotos: 0, documentos: 0, vendedorVerificado: false, datosPrivadosCompletos: true, sinCoordenadas: false });
     expect(s.find((x) => x.texto.includes("fotos"))?.nivel).toBe("alerta");
     expect(s.find((x) => x.texto.includes("data room"))?.nivel).toBe("aviso");
     expect(s.find((x) => x.texto.includes("verificado"))?.nivel).toBe("aviso");
@@ -20,6 +20,15 @@ describe("senalesModeracion", () => {
     const s = senalesModeracion(sano, { ...ctxOk, datosPrivadosCompletos: false });
     expect(s).toHaveLength(1);
     expect(s[0].nivel).toBe("alerta"); expect(s[0].texto).toContain("Faltan datos privados");
+  });
+  it("sin coordenadas es solo AVISO: el deal igual se publica, pero no saldrá en el mapa", () => {
+    const s = senalesModeracion(sano, { ...ctxOk, sinCoordenadas: true });
+    expect(s).toHaveLength(1);
+    expect(s[0].nivel).toBe("aviso"); expect(s[0].texto).toContain("mapa");
+  });
+  it("la alerta de datos privados ya no menciona coordenadas (son opcionales)", () => {
+    const s = senalesModeracion(sano, { ...ctxOk, datosPrivadosCompletos: false });
+    expect(s[0].texto).not.toMatch(/coordenadas/i);
   });
   it("reusa la coherencia NOI/renta/precio: NOI mayor a la renta anual es alerta", () => {
     const s = senalesModeracion({ ...sano, noi_anual: 1_500_000 }, ctxOk);
